@@ -126,7 +126,7 @@ contains
                              undf_w3,                 &
                              map_w3                   )
 
-    use lfric_atm_conversions_mod, only: feet_to_metres
+    use science_conversions_mod, only: feet_to_metres
 
     implicit none
 

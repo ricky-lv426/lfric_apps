@@ -14,7 +14,7 @@ module planck_mod
 
   use constants_mod, only : r_def
 
-  use lfric_atm_chemistry_constants_mod, only : &
+  use science_chemistry_constants_mod, only : &
     boltzmann, planck_constant, speed_of_light
 
   implicit none

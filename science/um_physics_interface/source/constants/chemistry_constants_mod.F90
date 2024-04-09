@@ -9,7 +9,7 @@
 module chemistry_constants_mod
 
   use constants_mod, only: r_um
-  use lfric_atm_chemistry_constants_mod, only:                                 &
+  use science_chemistry_constants_mod, only:                                 &
                                          lfric_avogadro => avogadro,           &
                                          lfric_boltzmann => boltzmann,         &
                                          density_so4,                          &

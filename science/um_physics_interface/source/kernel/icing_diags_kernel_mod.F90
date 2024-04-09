@@ -68,7 +68,7 @@ contains
                                undf_wth,         &
                                map_wth           )
 
-    use lfric_atm_conversions_mod, only: zero_degrees_celsius
+    use science_conversions_mod, only: zero_degrees_celsius
 
     implicit none
 

@@ -6,7 +6,7 @@
 !> @brief LFRic chemistry constants module
 !----------------------------------------------------------------------------
 !
-module lfric_atm_chemistry_constants_mod
+module science_chemistry_constants_mod
 
   use constants_mod, only: r_def
 
@@ -46,5 +46,5 @@ module lfric_atm_chemistry_constants_mod
   !< [Pa]
   !> @}
 
-end module lfric_atm_chemistry_constants_mod
+end module science_chemistry_constants_mod
 

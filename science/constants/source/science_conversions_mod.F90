@@ -6,7 +6,7 @@
 !> @brief LFRic conversions module
 !----------------------------------------------------------------------------
 
-module lfric_atm_conversions_mod
+module science_conversions_mod
 
   use constants_mod,         only : r_def
   use science_constants_mod, only : zero_C_in_K
@@ -38,4 +38,4 @@ module lfric_atm_conversions_mod
   ! Feet to metres (Conversion factor)
   real(r_def), parameter :: feet_to_metres = 0.3048_r_def
 
-end module lfric_atm_conversions_mod
+end module science_conversions_mod

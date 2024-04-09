@@ -14,7 +14,7 @@ module conversions_mod
                            radians_to_degrees, &
                            lfric_pi => pi
 
-  use lfric_atm_conversions_mod, only: seconds_per_day,           &
+  use science_conversions_mod, only: seconds_per_day,           &
                                        seconds_per_hour,          &
                                        seconds_per_minute,        &
                                        hours_per_day,             &

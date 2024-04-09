@@ -6,7 +6,7 @@
 !> @brief LFRic Relative Molecular Masses module
 !----------------------------------------------------------------------------
 
-module lfric_atm_rel_mol_mass_mod
+module science_rel_mol_mass_mod
 
   use constants_mod, only : r_def
 
@@ -33,4 +33,4 @@ module lfric_atm_rel_mol_mass_mod
   !< Dry Air: This should be planet dependent!
   !> @}
 
-end module lfric_atm_rel_mol_mass_mod
+end module science_rel_mol_mass_mod

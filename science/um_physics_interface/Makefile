@@ -73,7 +73,8 @@ unit-tests/%: export ADDITIONAL_EXTRACTION = $(CORE_ROOT_DIR)/infrastructure/sou
                                              $(CORE_ROOT_DIR)/components/diagnostics_infrastructure/source \
                                              $(APPS_ROOT_DIR)/science/jules_interface/source/kernel \
                                              $(CORE_ROOT_DIR)/components/science/unit-test/support \
-                                             $(APPS_ROOT_DIR)/science/gungho/source/diagnostics
+                                             $(APPS_ROOT_DIR)/science/gungho/source/diagnostics \
+                                             $(APPS_ROOT_DIR)/science/constants/source
 unit-tests/%: export BIN_DIR ?= $(PROJECT_DIR)/test
 unit-tests/%: export EXTERNAL_STATIC_LIBRARIES += pfunit
 unit-tests/%: export FFLAG_GROUPS = -D UNIT_TEST
