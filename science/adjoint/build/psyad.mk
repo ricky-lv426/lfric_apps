@@ -3,68 +3,33 @@
 # The file LICENCE, distributed with this code, contains details of the terms
 # under which the code may be used.
 ##############################################################################
-# This script runs PSyAD on all non-adjoint files in $(PSYAD_WDIR).
+# PSyAD STAGE RULES
+##############################################################################
 
-# There are tl kernel files and regular kernel files to process.
-# PSYAD_WDIR may have some adjoint kernels on incremental builds,
-# so we only want kernel files without the adj prefix.
-
+# Active variables for PSyAD compilation.
 include $(ADJOINT_BUILD)/psyad_vars.mk
 
-KERNEL_SOURCES := $(shell find $(PSYAD_WDIR)/kernel -name '*_kernel_mod.[Ff]90' ! -name 'adj_*_kernel_mod.[Ff]90' -print)
-
-# tl-prefixed kernel files.
-TLK_SOURCES    := $(shell find $(PSYAD_WDIR)/kernel -name 'tl_*_kernel_mod.[Ff]90' -print)
-
-# Non-prefixed (regular) kernel files.
-REGK_SOURCES   := $(filter-out $(TLK_SOURCES), $(KERNEL_SOURCES))
-
-# tl kernel files
-TLK_ADJ_TARGETS := $(subst tl_,adj_,$(TLK_SOURCES))
-
-# And their corresponding adjoint test names
-TLK_ADJT_TARGETS := $(subst tl_,adjt_,$(TLK_SOURCES))
-TLK_ADJT_TARGETS := $(subst kernel_mod,alg_mod,$(TLK_ADJT_TARGETS))
-TLK_ADJT_TARGETS := $(subst .F90,.X90,$(TLK_ADJT_TARGETS))
-TLK_ADJT_TARGETS := $(subst .f90,.x90,$(TLK_ADJT_TARGETS))
-TLK_ADJT_TARGETS := $(subst $(PSYAD_WDIR)/kernel,$(PSYAD_WDIR)/algorithm,$(TLK_ADJT_TARGETS))
-
-# Regular kernel files
-REGK_ADJ_TARGETS := $(join $(dir $(REGK_SOURCES)), $(addprefix adj_, $(notdir $(REGK_SOURCES))))
-
-# And their corresponding adjoint tests
-REGK_ADJT_TARGETS := $(join $(dir $(REGK_SOURCES)), $(addprefix adjt_, $(notdir $(REGK_SOURCES))))
-REGK_ADJT_TARGETS := $(subst kernel_mod,alg_mod,$(REGK_ADJT_TARGETS))
-REGK_ADJT_TARGETS := $(subst .F90,.X90,$(REGK_ADJT_TARGETS))
-REGK_ADJT_TARGETS := $(subst .f90,.x90,$(REGK_ADJT_TARGETS))
-REGK_ADJT_TARGETS := $(subst $(PSYAD_WDIR)/kernel,$(PSYAD_WDIR)/algorithm,$(REGK_ADJT_TARGETS))
-
-# Total targets
-ADJ_TARGETS  := $(TLK_ADJ_TARGETS) $(REGK_ADJ_TARGETS)
-ADJT_TARGETS := $(TLK_ADJT_TARGETS) $(REGK_ADJT_TARGETS)
-
-DIRECTORIES := $(addprefix $(PSYAD_WDIR)/,$(KERNEL_PATHS))
-DIRECTORIES += $(addprefix $(PSYAD_WDIR)/,$(ALG_PATHS))
-
-all: $(ADJ_TARGETS) $(ADJT_TARGETS)
-
+define PSYAD
 # Use define block here to account for subdirectories.
-# $1 is kernel path, $2 is algorithm path.
-# Runs PSyAD
-define GEN_PSYAD
-
-##############################################################################
-# F90
-##############################################################################
+# $2 is kernel path, $3 is algorithm path.
 #-----------------------------------------------------------------------------
-# For tl kernels
+# For F90s
 #-----------------------------------------------------------------------------
-$(PSYAD_WDIR)/$1/adj_%_kernel_mod.F90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.X90: \
-	$(PSYAD_WDIR)/$1/tl_%_kernel_mod.F90 | $(DIRECTORIES)
+# Adjoint test actually generates with the adjoint, but having a two-target
+# pattern rule causes race conditions when run in parallel. This faux rule
+# exists so Make knows the adjoint test has been created after the adjoint
+# is made. This implementation avoids such race conditions.
+$(PSYAD_WDIR)/$2/adjt_%_alg_mod.X90: $(PSYAD_WDIR)/$1/adj_%_kernel_mod.F90 \
+	| $(DIRECTORIES)
+	echo $$(notdir $$@) generated with $$(notdir $$<)
 
-	# Generating ADJT_TARGET since Make does not
-	# allow one to get it from the target list.
-	$$(eval ADJT_TARGET := $$(subst tl_,adjt_,$$<))
+# Runs PSyAD:
+# For tl kernels.
+$(PSYAD_WDIR)/$1/adj_%_kernel_mod.F90: $(PSYAD_WDIR)/$1/tl_%_kernel_mod.F90 \
+	| $(DIRECTORIES)
+
+	# Generating ADJT_TARGET
+	$$(eval ADJT_TARGET := $$(join $$(dir $$<), $$(subst tl_,adjt_,$$(notdir $$<))))
 	$$(eval ADJT_TARGET := $$(subst kernel_mod,alg_mod,$$(ADJT_TARGET)))
 	$$(eval ADJT_TARGET := $$(subst .F90,.X90,$$(ADJT_TARGET)))
 	$$(eval ADJT_TARGET := $$(subst $$(PSYAD_WDIR)/kernel,$$(PSYAD_WDIR)/algorithm,$$(ADJT_TARGET)))
@@ -76,14 +41,11 @@ $(PSYAD_WDIR)/$1/adj_%_kernel_mod.F90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.X90: \
 	echo "*Running* PSyAD on $$(basename $$(notdir $$<))"
 	psyad -api dynamo0.3 -t -otest $$(ADJT_TARGET) -oad $$@ -a $$(ACTIVE_VARS) -- $$<
 
-#-----------------------------------------------------------------------------
-# For regular kernels
-#-----------------------------------------------------------------------------
-$(PSYAD_WDIR)/$1/adj_%_kernel_mod.F90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.X90: \
-	$(PSYAD_WDIR)/$1/%_kernel_mod.F90 | $(DIRECTORIES)
+# For regular kernels.
+$(PSYAD_WDIR)/$1/adj_%_kernel_mod.F90: $(PSYAD_WDIR)/$1/%_kernel_mod.F90 \
+	| $(DIRECTORIES)
 
-	# Generating ADJT_TARGET since Make does not
-	# allow one to get it from the target list.
+	# Generating ADJT_TARGET
 	$$(eval ADJT_TARGET := $$(join $$(dir $$<), $$(addprefix adjt_, $$(notdir $$<))))
 	$$(eval ADJT_TARGET := $$(subst kernel_mod,alg_mod,$$(ADJT_TARGET)))
 	$$(eval ADJT_TARGET := $$(subst .F90,.X90,$$(ADJT_TARGET)))
@@ -96,18 +58,24 @@ $(PSYAD_WDIR)/$1/adj_%_kernel_mod.F90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.X90: \
 	echo "*Running* PSyAD on $$(basename $$(notdir $$<))"
 	psyad -api dynamo0.3 -t -otest $$(ADJT_TARGET) -oad $$@ -a $$(ACTIVE_VARS) -- $$<
 
-##############################################################################
-# f90
-##############################################################################
 #-----------------------------------------------------------------------------
-# For tl kernels
+# For f90s
 #-----------------------------------------------------------------------------
-$(PSYAD_WDIR)/$1/adj_%_kernel_mod.f90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.x90: \
-	$(PSYAD_WDIR)/$1/tl_%_kernel_mod.f90 | $(DIRECTORIES)
+# Adjoint test actually generates with the adjoint, but having a two-target
+# pattern rule causes race conditions when run in parallel. This faux rule
+# exists so Make knows the adjoint test has been created after the adjoint
+# is made. This implementation avoids such race conditions.
+$(PSYAD_WDIR)/$2/adjt_%_alg_mod.x90: $(PSYAD_WDIR)/$1/adj_%_kernel_mod.f90 \
+	| $(DIRECTORIES)
+	echo $$(notdir $$@) generated with $$(notdir $$<)
 
-	# Generating ADJT_TARGET since Make does not
-	# allow one to get it from the target list.
-	$$(eval ADJT_TARGET := $$(subst tl_,adjt_,$$<))
+# Runs PSyAD:
+# For tl kernels.
+$(PSYAD_WDIR)/$1/adj_%_kernel_mod.f90: $(PSYAD_WDIR)/$1/tl_%_kernel_mod.f90 \
+	| $(DIRECTORIES)
+
+	# Generating ADJT_TARGET
+	$$(eval ADJT_TARGET := $$(join $$(dir $$<), $$(subst tl_,adjt_,$$(notdir $$<))))
 	$$(eval ADJT_TARGET := $$(subst kernel_mod,alg_mod,$$(ADJT_TARGET)))
 	$$(eval ADJT_TARGET := $$(subst .f90,.x90,$$(ADJT_TARGET)))
 	$$(eval ADJT_TARGET := $$(subst $$(PSYAD_WDIR)/kernel,$$(PSYAD_WDIR)/algorithm,$$(ADJT_TARGET)))
@@ -119,14 +87,11 @@ $(PSYAD_WDIR)/$1/adj_%_kernel_mod.f90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.x90: \
 	echo "*Running* PSyAD on $$(basename $$(notdir $$<))"
 	psyad -api dynamo0.3 -t -otest $$(ADJT_TARGET) -oad $$@ -a $$(ACTIVE_VARS) -- $$<
 
-#-----------------------------------------------------------------------------
-# For regular kernels
-#-----------------------------------------------------------------------------
-$(PSYAD_WDIR)/$1/adj_%_kernel_mod.f90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.x90: \
-	$(PSYAD_WDIR)/$1/%_kernel_mod.f90 | $(DIRECTORIES)
+# For regular kernels.
+$(PSYAD_WDIR)/$1/adj_%_kernel_mod.f90: $(PSYAD_WDIR)/$1/%_kernel_mod.f90 \
+	| $(DIRECTORIES)
 
-	# Generating ADJT_TARGET since Make does not
-	# allow one to get it from the target list.
+	# Generating ADJT_TARGET
 	$$(eval ADJT_TARGET := $$(join $$(dir $$<), $$(addprefix adjt_, $$(notdir $$<))))
 	$$(eval ADJT_TARGET := $$(subst kernel_mod,alg_mod,$$(ADJT_TARGET)))
 	$$(eval ADJT_TARGET := $$(subst .f90,.x90,$$(ADJT_TARGET)))
@@ -139,14 +104,10 @@ $(PSYAD_WDIR)/$1/adj_%_kernel_mod.f90 $(PSYAD_WDIR)/$2/adjt_%_alg_mod.x90: \
 	echo "*Running* PSyAD on $$(basename $$(notdir $$<))"
 	psyad -api dynamo0.3 -t -otest $$(ADJT_TARGET) -oad $$@ -a $$(ACTIVE_VARS) -- $$<
 
-endef
+endef # PSYAD
 
-# Evaluating the GEN_PSYAD definition
+# Evaluating the PSYAD definition
 # for each kernel path, with the algorithm path
 # being generated from the kernel path via substitution.
 # After this, all possible rules are now generated.
-$(foreach kernel_path,$(KERNEL_PATHS),$(eval $(call GEN_PSYAD,$(kernel_path),$(subst kernel,algorithm,$(kernel_path)))))
-
-$(DIRECTORIES):
-	mkdir -p $@
-
+$(foreach kernel_path,$(KERNEL_PATHS),$(eval $(call PSYAD,$(kernel_path),$(subst kernel,algorithm,$(kernel_path)))))
