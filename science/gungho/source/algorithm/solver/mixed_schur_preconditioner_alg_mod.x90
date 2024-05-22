@@ -104,7 +104,7 @@ module mixed_schur_preconditioner_alg_mod
   use mixed_solver_config_mod,         only: split_w
   use log_mod,                         only: log_event,       &
                                              LOG_LEVEL_ERROR, &
-                                             LOG_LEVEL_INFO,  &
+                                             LOG_LEVEL_DEBUG, &
                                              log_scratch_space
   use mesh_mod,                        only: mesh_type
   use si_operators_alg_mod,            only: get_m3_rho_star, &
@@ -202,7 +202,7 @@ contains
     type(function_space_type), pointer :: fs
 
     call log_event( 'Constructing approximate Schur mixed preconditioner...', &
-                    LOG_LEVEL_INFO )
+                    LOG_LEVEL_DEBUG )
 
     mesh_ptr => mesh
     fs => function_space_collection%get_fs( mesh_ptr, p, W2 )
@@ -220,7 +220,7 @@ contains
     ! Set pressure solver
     self%pressure_solver => pressure_solver
 
-    call log_event( 'done', LOG_LEVEL_INFO )
+    call log_event( 'done', LOG_LEVEL_DEBUG )
 
   end function mixed_schur_preconditioner_constructor
 
@@ -260,7 +260,7 @@ contains
          call self%pressure_x%set_scalar(0.0_r_def)
 
          ! Solve pressure system
-         call log_event('Schur preconditioner pressure solve:', LOG_LEVEL_INFO)
+         call log_event('Schur preconditioner pressure solve:', LOG_LEVEL_DEBUG)
          call self%pressure_solver%apply(self%pressure_x, self%pressure_b)
 
          if ( subroutine_timers ) call timer('mixed_schur solve')

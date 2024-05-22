@@ -333,7 +333,7 @@ contains
 
     write(log_scratch_space, '(A,I4)') 'Setting up transport_runtime on mesh: ', &
                                        primal_wind_n_rdef%get_mesh_id()
-    call log_event(log_scratch_space, LOG_LEVEL_INFO)
+    call log_event(log_scratch_space, LOG_LEVEL_DEBUG)
 
     ! Proxy for the first time the object is initialised
     if ( .not. allocated(self%mesh_ids) ) self%computed_remapping = .false.
@@ -449,7 +449,7 @@ contains
       self%mesh_ids(2) = shifted_mesh%get_id()
       write(log_scratch_space, '(A,I4)') '... and shifted mesh: ', &
                                          shifted_mesh%get_id()
-      call log_event(log_scratch_space, LOG_LEVEL_INFO)
+      call log_event(log_scratch_space, LOG_LEVEL_DEBUG)
     end if
 
     ! ======================================================================== !

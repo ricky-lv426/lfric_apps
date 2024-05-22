@@ -129,8 +129,6 @@ contains
     call invoke(         X_divideby_Y(u_physics, u, dA), &
                 extract_w_kernel_type(velocity_w2v, u_physics) )
 
-    call log_field_minmax( LOG_LEVEL_INFO, 'u_physics', u_physics )
-
     call print_field_stats_alg(u_in_w3, LOG_LEVEL_INFO, &
                                printmin=-150.0_r_def, printmax=150.0_r_def)
     call print_field_stats_alg(v_in_w3, LOG_LEVEL_INFO, &
@@ -150,7 +148,7 @@ contains
 
     if ( smagorinsky ) then
 
-      call log_event( 'Calculate 3D shear', LOG_LEVEL_INFO )
+      call log_event( 'Calculate 3D shear', LOG_LEVEL_DEBUG )
       ! Calculate 3D shear
       call derived_fields%get_field('shear', shear)
       height_wth => get_height(Wtheta, mesh%get_id())

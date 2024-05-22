@@ -67,8 +67,7 @@ contains
     use xios,                          only: xios_date, xios_get_current_date, &
                                              xios_date_get_day_of_year
     use timer_mod,                     only: timer
-    use log_mod,                       only: log_event, LOG_LEVEL_INFO,        &
-                                             LOG_LEVEL_DEBUG
+    use log_mod,                       only: log_event, LOG_LEVEL_DEBUG
 
     use chemistry_config_mod,          only: chem_scheme,                      &
                                              chem_scheme_strattrop,            &
@@ -377,7 +376,7 @@ contains
 
     if ( subroutine_timers ) call timer('aerosol_ukca_alg')
 
-    call log_event( 'Running UKCA aerosol', LOG_LEVEL_INFO )
+    call log_event( 'Running UKCA aerosol', LOG_LEVEL_DEBUG )
 
     ! Set time variables for UKCA
     call xios_get_current_date(datetime)

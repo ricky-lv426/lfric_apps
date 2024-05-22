@@ -579,7 +579,7 @@ contains
 
     ! Solve the semi-implicit operator
     if ( subroutine_timers ) call timer('mixed_solver')
-    call log_event( "Gungho: mixed solve:", LOG_LEVEL_INFO )
+    call log_event( "Gungho: mixed solve:", LOG_LEVEL_DEBUG )
     ! Create field vectors out of field arrays
     call construct_solver_state(vector_inc, rhs_rsol, import_fields = .false.)
     call construct_solver_state(vector_rhs, rhs_rsol, import_fields = .true.)

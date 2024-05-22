@@ -68,7 +68,7 @@ contains
 
     use io_config_mod,             only: subroutine_timers
     use timer_mod,                 only: timer
-    use log_mod,                   only: log_event, LOG_LEVEL_INFO
+    use log_mod,                   only: log_event, LOG_LEVEL_DEBUG
 
     implicit none
 
@@ -138,7 +138,7 @@ contains
 
     if ( subroutine_timers ) call timer("mphys_alg")
 
-    call log_event( 'slow_physics: Running Microphysics', LOG_LEVEL_INFO )
+    call log_event( 'slow_physics: Running Microphysics', LOG_LEVEL_DEBUG )
 
     mesh => theta%get_mesh()
 

@@ -43,7 +43,7 @@ module gungho_diagnostics_driver_mod
   use moist_dyn_mod,             only : num_moist_factors
   use mr_indices_mod,            only : nummr, mr_names
   use log_mod,                   only : log_event, &
-                                        LOG_LEVEL_INFO
+                                        LOG_LEVEL_DEBUG
   use geometric_constants_mod,   only : get_panel_id, get_height
   use io_config_mod,             only: subroutine_timers, use_xios_io, write_fluxes
   use timer_mod,                 only: timer
@@ -134,7 +134,7 @@ contains
 
     if ( subroutine_timers ) call timer('gungho_diagnostics_driver')
 
-    call log_event("Gungho: writing diagnostic output", LOG_LEVEL_INFO)
+    call log_event("Gungho: writing diagnostic output", LOG_LEVEL_DEBUG)
 
     ! Get pointers to field collections for use downstream
     prognostic_fields => modeldb%fields%get_field_collection("prognostic_fields")

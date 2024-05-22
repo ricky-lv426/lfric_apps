@@ -14,7 +14,7 @@ module orographic_drag_alg_mod
   use psykal_lite_phys_mod, only: invoke_orographic_drag_kernel
   use io_config_mod,        only: subroutine_timers
   use timer_mod,            only: timer
-  use log_mod,              only: log_event, LOG_LEVEL_INFO
+  use log_mod,              only: log_event, LOG_LEVEL_DEBUG
   use mesh_mod,             only: mesh_type
 
   use geometric_constants_mod, only: get_height
@@ -101,7 +101,7 @@ contains
 
     if ( subroutine_timers ) call timer("orographic_drag_alg")
 
-    call log_event( 'slow_physics: Running Orographic drag', LOG_LEVEL_INFO )
+    call log_event( 'slow_physics: Running Orographic drag', LOG_LEVEL_DEBUG )
 
     mesh => theta%get_mesh()
 

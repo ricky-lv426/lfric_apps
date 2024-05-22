@@ -16,7 +16,7 @@ module si_operators_alg_mod
   use r_solver_field_mod,        only: r_solver_field_type
   use fs_continuity_mod,         only: W2, W3
   use log_mod,                   only: log_event,      &
-                                       LOG_LEVEL_INFO, &
+                                       LOG_LEVEL_DEBUG, &
                                        LOG_LEVEL_ERROR, &
                                        log_scratch_space
   use mesh_mod,                  only: mesh_type
@@ -186,7 +186,7 @@ contains
     type(function_space_type), pointer     :: wt_fs => null()
 
     if ( subroutine_timers ) call timer('si_operators_alg:create')
-    call log_event( "Gungho: creating si_operators", LOG_LEVEL_INFO )
+    call log_event( "Gungho: creating si_operators", LOG_LEVEL_DEBUG )
 
     if(l_multigrid) then
        multigrid_levels=multigrid_chain_nitems
@@ -236,7 +236,7 @@ contains
    do i = 1, multigrid_levels
 
        write(log_scratch_space,'(A,I0,A)') "si_ops[",i,"]:creating ops"
-       call log_event(log_scratch_space,LOG_LEVEL_INFO)
+       call log_event(log_scratch_space,LOG_LEVEL_DEBUG)
 
        call m3_rho_star(i)%initialise( w3_fs, w3_fs )
        call m3_exner_star(i)%initialise( w3_fs, w3_fs )
@@ -456,7 +456,7 @@ contains
     integer(kind=i_def), parameter :: req_halo_depth = req_stencil_depth + 1
 
     if ( subroutine_timers ) call timer('si_operators_alg:compute')
-    call log_event( "Gungho: computing si_operators", LOG_LEVEL_INFO )
+    call log_event( "Gungho: computing si_operators", LOG_LEVEL_DEBUG )
 
     w3_fs => state(igh_p)%get_function_space()
     w2_fs => state(igh_u)%get_function_space()
@@ -489,7 +489,7 @@ contains
     do level = 1, multigrid_levels
 
        write(log_scratch_space,'(A,I0)') "si_ops: mg level=",level
-       call log_event(log_scratch_space, LOG_LEVEL_INFO)
+       call log_event(log_scratch_space, LOG_LEVEL_DEBUG)
 
        mesh     => rho_at_u(level)%get_mesh()
        chi      => get_coordinates( mesh%get_id() )
@@ -725,7 +725,7 @@ contains
 
              write(log_scratch_space,'(A,I0,A,I0)') &
                   "si_ops:MG restrict L",level," to L",level+1
-             call log_event(log_scratch_space,LOG_LEVEL_INFO)
+             call log_event(log_scratch_space,LOG_LEVEL_DEBUG)
 
              ! copy current field to coarse field
              call theta%copy_field_properties(coarse_field)
