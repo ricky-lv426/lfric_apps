@@ -92,6 +92,7 @@ stretching_method='linear',
  ancil_option = 'none'
  lbc_option = 'none'
  coarse_aerosol_ancil=.false.
+zero_w2v_wind=.false.,
 /
 
 &files
@@ -214,9 +215,7 @@ stretching_method='linear',
   outer_iterations   = 2
   inner_iterations   = 2
   runge_kutta_method = 'forward_euler'
-  spinup_period      = 1
   spinup_alpha       = .false.
-  spinup_winds       = .false.
 /
 
 &departure_points

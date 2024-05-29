@@ -84,6 +84,7 @@ ancil_option = 'none'
 init_option = 'analytic'
 lbc_option = 'none'
 coarse_aerosol_ancil=.false.
+zero_w2v_wind=.false.,
 /
 
 &io
@@ -179,8 +180,6 @@ method = 'semi_implicit'
 outer_iterations = 2
 runge_kutta_method = 'ssp3'
 spinup_alpha = .false.
-spinup_period = 0.0
-spinup_winds = .false.
 tau_r = 0.0
 tau_t = 0.0
 tau_u = 0.0

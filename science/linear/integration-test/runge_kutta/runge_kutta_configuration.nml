@@ -83,6 +83,7 @@ ancil_option='none',
 init_option='analytic',
 lbc_option='none',
 ls_option='analytic',
+zero_w2v_wind=.false.,
 /
 &initial_density
 r1=0.0,
@@ -208,8 +209,6 @@ dt=1.0,
 method='rk',
 runge_kutta_method = 'forward_euler'
 spinup_alpha=.false.,
-spinup_period=0,
-spinup_winds=.false.,
 tau_r=1.0,
 tau_t=0.5,
 tau_u=0.5,

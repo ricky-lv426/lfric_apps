@@ -43,5 +43,4 @@ coord_system='alphabetaz'
 
 &timestepping
   dt=1.0
-  spinup_period=0.0
 /

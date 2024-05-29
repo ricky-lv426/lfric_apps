@@ -106,6 +106,7 @@ ls_option='analytic',
 n_orog_smooth=0,
 read_w2h_wind=.false.,
 w0_orography_mapping=.false.,
+zero_w2v_wind=.false.,
 /
 &initial_density
 density_background=0.1,
@@ -240,8 +241,6 @@ dt=1.0,
 method='rk',
 runge_kutta_method='forward_euler',
 spinup_alpha=.false.,
-spinup_period=0,
-spinup_winds=.false.,
 tau_u=0,
 /
 &transport

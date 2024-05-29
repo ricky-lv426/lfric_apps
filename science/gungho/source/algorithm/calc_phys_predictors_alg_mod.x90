@@ -87,8 +87,7 @@ subroutine calc_phys_predictors_alg( derived_fields, rhs_np1, rhs_adv, &
     call derived_fields%get_field('theta_star', theta_star)
     call derived_fields%get_field('u_star', u_star)
 
-    if (use_wavedynamics .and. (.not. model_clock%is_spinning_up())) then
-      ! Note that if spinning up the dynamics, then explicit predictors are used.
+    if (use_wavedynamics) then
 
       ! theta_star can be directly guessed from advection terms
       call dtheta%initialise( rhs_adv(igh_t)%get_function_space() )

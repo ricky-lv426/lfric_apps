@@ -84,6 +84,7 @@ ls_option='file',
 n_orog_smooth=0,
 read_w2h_wind=.false.,
 coarse_aerosol_ancil=.false.
+zero_w2v_wind=.false.,
 /
 &initial_density
 r1=0.0,
@@ -216,8 +217,6 @@ dt=1.0,
 method='rk',
 runge_kutta_method='forward_euler',
 spinup_alpha=.false.,
-spinup_period=0,
-spinup_winds=.false.,
 /
 &transport
 adjust_theta=.false.

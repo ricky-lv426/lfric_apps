@@ -180,7 +180,6 @@ inner_iterations=2,
 method='rk',
 outer_iterations=2,
 runge_kutta_method='forward_euler',
-spinup_period=0.0,
 /
 &partitioning
 partitioner='cubedsphere',

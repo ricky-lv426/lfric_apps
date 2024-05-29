@@ -173,8 +173,6 @@ inner_iterations   = 2
 runge_kutta_method = 'ssp3'
         ! This runge_kutta_method does not affect the shallow water miniapp
 spinup_alpha       = .false.
-spinup_period      = 0
-spinup_winds       = .false.
 tau_r              = 0.0
 tau_t              = 0.0
 tau_u              = 0.0
@@ -316,6 +314,7 @@ init_option  = 'analytic'
 lbc_option   = 'none'
 ls_option    = 'none'
 coarse_aerosol_ancil=.false.
+zero_w2v_wind=.false.,
 /
 
 &logging

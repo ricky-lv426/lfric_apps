@@ -22,7 +22,6 @@ module semi_implicit_timestep_alg_mod
                                        copy_bundle,       &
                                        set_bundle_scalar, &
                                        bundle_inc_axpby
-  use reference_element_mod,     only: TOP_FACE => T
 
   ! Parent of this module's semi-implicit timestep type
   use timestep_method_mod,       only: timestep_method_type
@@ -57,7 +56,7 @@ module semi_implicit_timestep_alg_mod
                                         reference_reset_freq
   use timestepping_config_mod,    only: alpha,                                &
                                         outer_iterations, inner_iterations,   &
-                                        spinup_period, spinup_alpha, spinup_winds
+                                        spinup_alpha
   use transport_config_mod,       only: cheap_update, &
                                         transport_ageofair
   use derived_config_mod,         only: bundle_size
@@ -71,7 +70,6 @@ module semi_implicit_timestep_alg_mod
   use dg_inc_matrix_vector_kernel_mod, &
                                   only: dg_inc_matrix_vector_kernel_type
   use enforce_bc_kernel_mod,      only: enforce_bc_kernel_type
-  use set_any_dof_kernel_mod,     only: set_any_dof_kernel_type
 
   ! Derived Types
   use field_array_mod,            only: field_array_type
@@ -609,16 +607,6 @@ contains
                  setval_X(self%state(igh_p), exner) )
 
     !--------------------------------------------------------------------
-    ! If winds are being spunup overwrite the local copy of the winds
-    ! with the driver level representation
-    !--------------------------------------------------------------------
-    if (model_clock%is_spinning_up()) then
-       if (spinup_winds) then
-         call invoke( setval_X(self%state(igh_u), u ) )
-       end if
-    end if
-
-    !--------------------------------------------------------------------
     ! If off-centring is being spun up then modify the alpha value
     !--------------------------------------------------------------------
     if (spinup_alpha .and. model_clock%is_spinning_up()) then
@@ -888,12 +876,6 @@ contains
                                         moist_dyn(gas_law) )
           end if
 
-          ! For poorly balanced initial conditions, we set the vertical
-          ! component of W2 wind to zero
-          if (spinup_alpha .and. model_clock%is_spinning_up()) then
-            call invoke( set_any_dof_kernel_type(self%state(igh_u), TOP_FACE, 0.0_r_def) )
-          end if
-
           !--------------------------------------------------------------------
           ! LAM Overwrite and Blend LBCs
           !--------------------------------------------------------------------
@@ -1002,10 +984,8 @@ contains
     !--------------------------------------------------------------------
     ! Update fields held in the driver layer
     !--------------------------------------------------------------------
-    if (.not. (spinup_winds .and. model_clock%is_spinning_up())) &
-      call invoke( setval_X(u, self%state(igh_u)) )
-
-    call invoke( setval_X(theta, self%state(igh_t)), &
+    call invoke( setval_X(u,     self%state(igh_u)), &
+                 setval_X(theta, self%state(igh_t)), &
                  setval_X(rho,   self%state(igh_d)), &
                  setval_X(exner, self%state(igh_p)) )
 

@@ -22,7 +22,8 @@ module linear_model_data_mod
   use init_time_axis_mod,             only : setup_field
   use initialization_config_mod,      only : ls_option,           &
                                              ls_option_analytic,  &
-                                             ls_option_file
+                                             ls_option_file, &
+                                             zero_w2v_wind
   use lfric_xios_time_axis_mod,       only : time_axis_type
   use lfric_xios_read_mod,            only : read_field_time_var
   use linear_data_algorithm_mod,      only : linear_copy_model_to_ls,  &
@@ -49,6 +50,9 @@ module linear_model_data_mod
   use mr_indices_mod,                 only : nummr, &
                                              mr_names
   use linear_map_fd_alg_mod,          only : linear_map_fd_to_prognostics
+  use set_any_dof_alg_mod,            only : set_any_dof_alg
+  use reference_element_mod,          only : T
+  use io_config_mod,                  only : checkpoint_read
 
   implicit none
 
@@ -398,6 +402,8 @@ contains
     type( mesh_type ), pointer, intent(in) :: twod_mesh
 
     type( modeldb_type ), target, intent(inout) :: modeldb
+    type(field_collection_type), pointer :: prognostic_fields
+    type( field_type ),          pointer :: u
 
     select case( pert_option )
 
@@ -424,6 +430,13 @@ contains
         call log_event("This pert_option not available", LOG_LEVEL_ERROR)
 
     end select
+
+    if (.not. checkpoint_read .and. zero_w2v_wind) then
+      prognostic_fields => modeldb%fields%get_field_collection(&
+                                          "prognostic_fields")
+      call prognostic_fields%get_field('u', u)
+      call set_any_dof_alg(u, T, 0.0_r_def)
+    end if
 
   end subroutine linear_init_pert
 
