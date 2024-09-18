@@ -15,7 +15,7 @@ use argument_mod,      only: arg_type, GH_FIELD, GH_SCALAR, GH_INTEGER,        &
                              ANY_DISCONTINUOUS_SPACE_4,                        &
                              ANY_DISCONTINUOUS_SPACE_5,                        &
                              ANY_DISCONTINUOUS_SPACE_6,                        &
-                             CELL_COLUMN
+                             DOMAIN
 
 use fs_continuity_mod, only: WTHETA, W3
 use kernel_mod,        only: kernel_type
@@ -282,7 +282,8 @@ type, public, extends(kernel_type) :: aerosol_ukca_kernel_type
        arg_type( GH_FIELD, GH_REAL, GH_READ, WTHETA ),      & ! emiss_om_biomass
        arg_type( GH_FIELD, GH_REAL, GH_READ, WTHETA )       & ! emiss_so2_nat
        /)
-  integer :: operates_on = CELL_COLUMN
+  integer :: operates_on = DOMAIN
+
 contains
   procedure, nopass :: aerosol_ukca_code
 end type
@@ -303,6 +304,7 @@ contains
 !>          Mass mixing ratios are in kg per kg of air, number mixing ratio
 !>          for the aerosol modes are in particles per molecule of air.
 !> @param[in]     nlayers             Number of layers
+!> @param[in]     seg_len             Number of horizontal cells in segment
 !> @param[in,out] o3p                 Oxygen_ground_state m.m.r
 !> @param[in,out] o1d                 Oxygen_excited_state m.m.r
 !> @param[in,out] o3                  Ozone m.m.r.
@@ -579,6 +581,7 @@ contains
 !> @param[in]     map_dust            Dofmap for cell for dust divisions
 
 subroutine aerosol_ukca_code( nlayers,                                         &
+                              seg_len,                                         &
                               o3p,                                             &
                               o1d,                                             &
                               o3,                                              &
@@ -1090,7 +1093,6 @@ subroutine aerosol_ukca_code( nlayers,                                         &
                               nlev_ent_tr_mix
 
   use log_mod,              only: log_event, log_scratch_space, LOG_LEVEL_ERROR
-  use chemistry_config_mod, only: chem_scheme, chem_scheme_strattrop
 
   ! UM modules
   use nlsizes_namelist_mod, only: bl_levels
@@ -1098,9 +1100,8 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   use timestep_mod,         only: timestep
 
   ! JULES modules
-  use jules_surface_types_mod, &
-                            only: npft, ntype
-  use jules_surface_mod,    only: l_urban2t
+  use jules_surface_types_mod, only: npft, ntype
+  use jules_surface_mod,       only: l_urban2t
   use jules_sea_seaice_mod, only: nice
   use jules_urban_mod,      only: l_moruses
   use sparm_mod,            only: sparm
@@ -1123,31 +1124,31 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   ! Arguments
 
   integer(kind=i_def), intent(in) :: nlayers
-
+  integer(kind=i_def), intent(in) :: seg_len
   integer(kind=i_def), intent(in) :: ndf_w3
   integer(kind=i_def), intent(in) :: undf_w3
-  integer(kind=i_def), dimension(ndf_w3), intent(in) :: map_w3
+  integer(kind=i_def), dimension(ndf_w3, seg_len), intent(in) :: map_w3
   integer(kind=i_def), intent(in) :: ndf_wth
   integer(kind=i_def), intent(in) :: undf_wth
-  integer(kind=i_def), dimension(ndf_wth), intent(in) :: map_wth
+  integer(kind=i_def), dimension(ndf_wth, seg_len), intent(in) :: map_wth
   integer(kind=i_def), intent(in) :: ndf_tile
   integer(kind=i_def), intent(in) :: undf_tile
-  integer(kind=i_def), dimension(ndf_tile), intent(in) :: map_tile
+  integer(kind=i_def), dimension(ndf_tile, seg_len), intent(in) :: map_tile
   integer(kind=i_def), intent(in) :: ndf_pft
   integer(kind=i_def), intent(in) :: undf_pft
-  integer(kind=i_def), dimension(ndf_pft), intent(in) :: map_pft
+  integer(kind=i_def), dimension(ndf_pft, seg_len), intent(in) :: map_pft
   integer(kind=i_def), intent(in) :: ndf_soil
   integer(kind=i_def), intent(in) :: undf_soil
-  integer(kind=i_def), dimension(ndf_soil), intent(in) :: map_soil
+  integer(kind=i_def), dimension(ndf_soil, seg_len), intent(in) :: map_soil
   integer(kind=i_def), intent(in) :: ndf_2d
   integer(kind=i_def), intent(in) :: undf_2d
-  integer(kind=i_def), dimension(ndf_2d), intent(in) :: map_2d
+  integer(kind=i_def), dimension(ndf_2d, seg_len), intent(in) :: map_2d
   integer(kind=i_def), intent(in) :: ndf_ent
   integer(kind=i_def), intent(in) :: undf_ent
-  integer(kind=i_def), dimension(ndf_ent), intent(in) :: map_ent
+  integer(kind=i_def), dimension(ndf_ent, seg_len), intent(in) :: map_ent
   integer(kind=i_def), intent(in) :: ndf_dust
   integer(kind=i_def), intent(in) :: undf_dust
-  integer(kind=i_def), dimension(ndf_dust), intent(in) :: map_dust
+  integer(kind=i_def), dimension(ndf_dust, seg_len), intent(in) :: map_dust
 
   real(kind=r_def), intent(in out), dimension(undf_wth) :: o3p
   real(kind=r_def), intent(in out), dimension(undf_wth) :: o1d
@@ -1411,73 +1412,96 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   ! Model time at previous time step
   integer(i_um) :: previous_time(7)
 
-  ! Prognostics to be updated in the time step
-  real(r_um), allocatable :: tracer(:,:) ! Tracer fields
-  real(r_um), allocatable :: ntp(:,:)    ! NTP fields
-                                         ! (for microphysics & RADAER)
+  ! Prognostics to be updated in the time step (i,j,k,m)
+  real(r_um), allocatable :: tracer(:,:,:,:) ! 3D Tracer fields
+  real(r_um), allocatable :: ntp(:,:,:,:)    ! 3D NTP fields
+                                             ! (for microphysics & RADAER)
 
-  real(r_um) :: r_theta_levels(1,1,0:nlayers)
-  real(r_um) :: r_rho_levels(1,1,nlayers)
+  real(r_um) :: r_theta_levels(seg_len,1,0:nlayers)
+  real(r_um) :: r_rho_levels(seg_len,1,nlayers)
   ! Environmental driver fields (including emissions)
 
-  integer(i_um), allocatable :: environ_flat_integer(:)
+  ! dimensions (seg_len, 1, m_fields)
+  integer(i_um), allocatable :: environ_flat_integer(:,:,:)
 
   real(r_um), allocatable :: environ_scalar_real(:)
-  real(r_um), allocatable :: environ_flat_real(:)
-  real(r_um), allocatable :: environ_flatpft_real(:,:)
-  real(r_um), allocatable :: environ_fullht_real(:,:)
-  real(r_um), allocatable :: environ_fullht0_real(:,:)
-  real(r_um), allocatable :: environ_fullhtp1_real(:,:)
-  real(r_um), allocatable :: environ_bllev_real(:,:)
-  real(r_um), allocatable :: environ_entlev_real(:,:)
-  real(r_um), allocatable :: environ_land_real(:,:)
+  real(r_um), allocatable :: environ_flat_real(:,:,:)
+
   real(r_um), allocatable :: environ_landtile_real(:,:,:)
   real(r_um), allocatable :: environ_landpft_real(:,:,:)
-  real(r_um), allocatable :: emissions_flat(:)
-  real(r_um), allocatable :: emissions_fullht(:,:)
+  real(r_um), allocatable :: emissions_flat(:,:,:)
 
-  logical, allocatable :: environ_flat_logical(:)
+  ! Dimensions: seg_len, 1, npft, m_fields
+
+  real(r_um), allocatable :: environ_flatpft_real(:,:,:,:)
+
+  ! Dimensions: n_land_pts, n_land_tile, m_fields
+
   logical, allocatable :: environ_landtile_logical(:,:,:)
+
+  ! Dimensions: X,Y,M
+
+  logical, allocatable :: environ_flat_logical(:,:,:)
+
+  ! Dimensions: n_land_pts
+
+  real(r_um), allocatable :: z0m_soil_gb(:) ! Soil roughness length (m)
+
+  ! Dimensions: X,Y,Z,M
+
+  real(r_um), allocatable :: environ_fullht_real(:,:,:,:)
+  real(r_um), allocatable :: environ_fullht0_real(:,:,:,:)
+  real(r_um), allocatable :: environ_fullhtp1_real(:,:,:,:)
+  real(r_um), allocatable :: environ_bllev_real(:,:,:,:)
+  real(r_um), allocatable :: environ_entlev_real(:,:,:,:)
+  real(r_um), allocatable :: emissions_fullht(:,:,:,:)
+
+  ! Dimensions: n_land_pts, M
+
+  real(r_um), allocatable :: environ_land_real(:,:)
+
+  ! Dimensions: n_land_pts, n_land_tile
+
+  real(r_um), allocatable :: z0_surft(:,:)
+                             ! Surface roughness length on tiles (m)
+  real(r_um), allocatable :: lai_pft(:,:)
+                             ! Leaf area index of plant functional type
+  real(r_um), allocatable :: canht_pft(:,:)
+                             ! Canopy_height of plant functional type (m)
+  logical, allocatable    :: l_tile_active(:,:)
+                             ! active tile indicator (True if tile is in use)
+
+  ! Dimensions: n_land_pts, n_land_tile
+  ! Unused output fields from JULES sparm routine
+  real(r_um), allocatable :: catch_snow_surft(:,:)
+  real(r_um), allocatable :: catch_surft(:,:)
+  real(r_um), allocatable :: z0h_bare_surft(:,:)
 
   ! Working variables
 
-  integer(i_um) :: n_fields   ! Number of fields in a group
+  integer(i_um) :: m_fields   ! Number of fields in a group
   integer(i_um) :: n_land_pts ! Number of land points
-  integer(i_um) :: i
-  integer(i_um) :: j
-  integer(i_um) :: k
+  integer(i_um) :: i          ! Model horizontal loop counter
+  integer(i_um) :: j          ! Model horizontal loop counter
+  integer(i_um) :: k          ! Model level loop counter
+  integer(i_um) :: m          ! Loop counter
   integer(i_um) :: error_code
+  integer(i_um) :: nlayers_plus_one
 
-  integer(i_um) :: surft_index(n_land_tile)
-                              ! Indices of land points that include surface type
-  real(r_um) :: frac_land     ! Land fraction of cell
-  real(r_um) :: frac_sea      ! Sea fraction of cell
-  real(r_um) :: frac_seaice   ! Sea fraction with respect to sea area
-  real(r_um) :: meanval       ! Arbitrary mean value
+  real(r_um) :: frac_land(seg_len)     ! Land fraction of cell
+  real(r_um) :: frac_sea(seg_len)      ! Sea fraction of cell
+  real(r_um) :: frac_seaice(seg_len)   ! Sea fraction with respect to sea area
+  real(r_um) :: meanval(seg_len)       ! Arbitrary mean value
 
-  real(r_um) :: z0m_soil_gb(1) ! Soil roughness length (m)
-
-  real(r_um) :: frac_surft( 1, n_land_tile )
-                              ! Fraction of surf. type with respect to land area
-  real(r_um) :: z0_surft( 1, n_land_tile )
-                              ! Surface roughness length on tiles (m)
-  real(r_um) :: lai_pft( 1, n_land_tile )
-                              ! Leaf area index of plant functional type
-  real(r_um) :: canht_pft( 1, n_land_tile )
-                              ! Canopy_height of plant functional type (m)
-  real(r_um) :: rho_r2        ! Density * r * r
   real(r_um) :: exner_rho_top ! Exner pressure at top rho level
   real(r_um) :: exner_theta_top ! Exner pressure at top theta level
 
-  logical :: l_land           ! Land/sea indicator (True for land point)
+  logical :: l_land_any    ! Land/sea indicator (True for land point)
 
-  logical :: l_tile_active( 1, n_land_tile )
-                              ! active tile indicator (True if tile is in use)
+  ! single level logical fields
+  logical, dimension(seg_len,1) :: land_sea_mask
 
-  ! Unused output fields from JULES sparm routine
-  real(r_um) :: catch_snow_surft( 1, n_land_tile )
-  real(r_um) :: catch_surft( 1, n_land_tile )
-  real(r_um) :: z0h_bare_surft( 1, n_land_tile )
+
 
   type(ainfo_data_type) :: ainfo_data
   type(ainfo_type) :: ainfo
@@ -1491,8 +1515,8 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   real(r_def), parameter :: ztodry = 3.0_r_def * rsec_per_hour
 
   ! Grid cell airmass and volume (for some emissions and diagnostics)
-  real(r_um) :: grid_airmass(1,1,nlayers)
-  real(r_um) :: grid_volume(1,1,nlayers)
+  real(r_um) :: grid_airmass(seg_len,1,nlayers)
+  real(r_um) :: grid_volume(seg_len,1,nlayers)
 
   ! UKCA error reporting variables
   character(len=ukca_maxlen_message)  :: ukca_errmsg  ! Error return message
@@ -1505,516 +1529,1155 @@ subroutine aerosol_ukca_code( nlayers,                                         &
 
   ! -- Tracers --
 
-  n_fields = size(tracer_names)
-  allocate(tracer( nlayers, n_fields ))
-  tracer = 0.0_r_um
+  m_fields = size(tracer_names)
+  allocate( tracer( seg_len, 1, nlayers, m_fields ) )
+  tracer(:,:,:,:) = 0.0_r_um
 
-  do i = 1, n_fields
-    select case(tracer_names(i))
+  do m = 1, m_fields
+    select case(tracer_names(m))
     case(fldname_o3p)
-      tracer( :, i ) =                                                         &
-        real( o3p( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( o3p( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_o3)
-      tracer( :, i ) =                                                         &
-        real( o3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( o3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n)
-      tracer( :, i ) =                                                         &
-        real( n( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_no)
-      tracer( :, i ) =                                                         &
-        real( no( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( no( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_no3)
-      tracer( :, i ) =                                                         &
-        real( no3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( no3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_lumped_n)
-      tracer( :, i ) =                                                         &
-        real( lumped_n( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( lumped_n( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n2o5)
-      tracer( :, i ) =                                                         &
-        real( n2o5( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n2o5( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ho2no2)
-      tracer( :, i ) =                                                         &
-        real( ho2no2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ho2no2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hono2)
-      tracer( :, i ) =                                                         &
-        real( hono2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hono2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_h2o2)
-      tracer( :, i ) =                                                         &
-        real( h2o2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( h2o2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ch4)
-      tracer( :, i ) =                                                         &
-        real( ch4( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ch4( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_co)
-      tracer( :, i ) =                                                         &
-        real( co( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( co( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hcho)
-      tracer( :, i ) =                                                         &
-        real( hcho( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hcho( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meoo)
-      tracer( :, i ) =                                                         &
-        real( meoo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( meoo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meooh)
-      tracer( :, i ) =                                                         &
-        real( meooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( meooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_h)
-      tracer( :, i ) =                                                         &
-        real( h( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( h( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ch2o)
       ! Copy water mixing ratio in H2O tracer in chemistry
-      tracer( :, i ) =                                                         &
-        real( m_v_n( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( m_v_n( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_oh)
-      tracer( :, i ) =                                                         &
-        real( oh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( oh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ho2)
-      tracer( :, i ) =                                                         &
-        real( ho2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ho2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cl)
-      tracer( :, i ) =                                                         &
-        real( cl( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cl( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cl2o2)
-      tracer( :, i ) =                                                         &
-        real( cl2o2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cl2o2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_clo)
-      tracer( :, i ) =                                                         &
-        real( clo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( clo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_oclo)
-      tracer( :, i ) =                                                         &
-        real( oclo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( oclo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_br)
-      tracer( :, i ) =                                                         &
-        real( br( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( br( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_lumped_br)
-      tracer( :, i ) =                                                         &
-        real( lumped_br( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( lumped_br( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_brcl)
-      tracer( :, i ) =                                                         &
-        real( brcl( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( brcl( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_brono2)
-      tracer( :, i ) =                                                         &
-        real( brono2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( brono2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n2o)
-      tracer( :, i ) =                                                         &
-        real( n2o( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n2o( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_lumped_cl)
-      tracer( :, i ) =                                                         &
-        real( lumped_cl( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( lumped_cl( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hocl)
-      tracer( :, i ) =                                                         &
-        real( hocl( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hocl( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hbr)
-      tracer( :, i ) =                                                         &
-        real( hbr( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hbr( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hobr)
-      tracer( :, i ) =                                                         &
-        real( hobr( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hobr( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_clono2)
-      tracer( :, i ) =                                                         &
-        real( clono2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( clono2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cfcl3)
-      tracer( :, i ) =                                                         &
-        real( cfcl3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cfcl3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cf2cl2)
-      tracer( :, i ) =                                                         &
-        real( cf2cl2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cf2cl2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_mebr)
-      tracer( :, i ) =                                                         &
-        real( mebr( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( mebr( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hono)
-      tracer( :, i ) =                                                         &
-        real( hono( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hono( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_c2h6)
-      tracer( :, i ) =                                                         &
-        real( c2h6( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( c2h6( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_etoo)
-      tracer( :, i ) =                                                         &
-        real( etoo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( etoo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_etooh)
-      tracer( :, i ) =                                                         &
-        real( etooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( etooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_mecho)
-      tracer( :, i ) =                                                         &
-        real( mecho( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( mecho( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meco3)
-      tracer( :, i ) =                                                         &
-        real( meco3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( meco3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pan)
-      tracer( :, i ) =                                                         &
-        real( pan( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( pan( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_c3h8)
-      tracer( :, i ) =                                                         &
-        real( c3h8( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( c3h8( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_proo)
-      tracer( :, i ) =                                                         &
-        real( n_proo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_proo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_i_proo)
-      tracer( :, i ) =                                                         &
-        real( i_proo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( i_proo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_prooh)
-      tracer( :, i ) =                                                         &
-        real( n_prooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_prooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_i_prooh)
-      tracer( :, i ) =                                                         &
-        real( i_prooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( i_prooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_etcho)
-      tracer( :, i ) =                                                         &
-        real( etcho( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( etcho( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_etco3)
-      tracer( :, i ) =                                                         &
-        real( etco3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( etco3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_me2co)
-      tracer( :, i ) =                                                         &
-        real( me2co( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( me2co( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_mecoch2oo)
-      tracer( :, i ) =                                                         &
-        real( mecoch2oo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( mecoch2oo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_mecoch2ooh)
-      tracer( :, i ) =                                                         &
-        real( mecoch2ooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( mecoch2ooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ppan)
-      tracer( :, i ) =                                                         &
-        real( ppan( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ppan( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meono2)
-      tracer( :, i ) =                                                         &
-        real( meono2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( meono2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_c5h8)
-      tracer( :, i ) =                                                         &
-        real( c5h8( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( c5h8( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_iso2)
-      tracer( :, i ) =                                                         &
-        real( iso2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( iso2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_isooh)
-      tracer( :, i ) =                                                         &
-        real( isooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( isooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ison)
-      tracer( :, i ) =                                                         &
-        real( ison( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ison( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_macr)
-      tracer( :, i ) =                                                         &
-        real( macr( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( macr( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_macrooh)
-      tracer( :, i ) =                                                         &
-        real( macrooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( macrooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_macro2)
-      tracer( :, i ) =                                                         &
-        real( macro2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( macro2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_mpan)
-      tracer( :, i ) =                                                         &
-        real( mpan( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( mpan( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hacet)
-      tracer( :, i ) =                                                         &
-        real( hacet( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hacet( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_mgly)
-      tracer( :, i ) =                                                         &
-        real( mgly( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( mgly( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_nald)
-      tracer( :, i ) =                                                         &
-        real( nald( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( nald( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hcooh)
-      tracer( :, i ) =                                                         &
-        real( hcooh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( hcooh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meco3h)
-      tracer( :, i ) =                                                         &
-        real( meco3h( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( meco3h( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meco2h)
-      tracer( :, i ) =                                                         &
-        real( meco2h( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( meco2h( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_h2)
-      tracer( :, i ) =                                                         &
-        real( h2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( h2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meoh)
-      tracer( :, i ) =                                                         &
-        real( meoh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( meoh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_msa)
-      tracer( :, i ) =                                                         &
-        real( msa( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( msa( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_nh3)
-      tracer( :, i ) =                                                         &
-        real( nh3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( nh3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cs2)
-      tracer( :, i ) =                                                         &
-        real( cs2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cs2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_csul)
-      tracer( :, i ) =                                                         &
-        real( csul( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( csul( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_h2s)
-      tracer( :, i ) =                                                         &
-        real( h2s( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( h2s( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_so3)
-      tracer( :, i ) =                                                         &
-        real( so3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( so3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_passive_o3)
-      tracer( :, i ) =                                                         &
-        real( passive_o3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( passive_o3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_age_of_air)
-      tracer( :, i ) =                                                         &
-        real( age_of_air( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( age_of_air( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_dms)
-      tracer( :, i ) =                                                         &
-        real( dms( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( dms( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_so2)
-      tracer( :, i ) =                                                         &
-        real( so2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( so2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_h2so4)
-      tracer( :, i ) =                                                         &
-        real( h2so4( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( h2so4( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_dmso)
-      tracer( :, i ) =                                                         &
-        real( dmso( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( dmso( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_monoterpene)
-      tracer( :, i ) =                                                         &
-        real( monoterpene( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( monoterpene( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_secondary_organic)
-      tracer( :, i ) =                                                         &
-        real( secondary_organic( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( secondary_organic( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_nuc_sol)
-      tracer( :, i ) =                                                         &
-        real( n_nuc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_nuc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_nuc_sol_su)
-      tracer( :, i ) =                                                         &
-        real( nuc_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( nuc_sol_su( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_nuc_sol_om)
-      tracer( :, i ) =                                                         &
-        real( nuc_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( nuc_sol_om( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_ait_sol)
-      tracer( :, i ) =                                                         &
-        real( n_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ait_sol_su)
-      tracer( :, i ) =                                                         &
-        real( ait_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ait_sol_su( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ait_sol_bc)
-      tracer( :, i ) =                                                         &
-        real( ait_sol_bc( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ait_sol_bc( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ait_sol_om)
-      tracer( :, i ) =                                                         &
-        real( ait_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ait_sol_om( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_acc_sol)
-      tracer( :, i ) =                                                         &
-        real( n_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_acc_sol_su)
-      tracer( :, i ) =                                                         &
-        real( acc_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( acc_sol_su( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_acc_sol_bc)
-      tracer( :, i ) =                                                         &
-        real( acc_sol_bc( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( acc_sol_bc( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_acc_sol_om)
-      tracer( :, i ) =                                                         &
-        real( acc_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( acc_sol_om( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_acc_sol_ss)
-      tracer( :, i ) =                                                         &
-        real( acc_sol_ss( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( acc_sol_ss( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_acc_sol_du)
-      tracer( :, i ) =                                                         &
-        real( acc_sol_du( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( acc_sol_du( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_cor_sol)
-      tracer( :, i ) =                                                         &
-        real( n_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cor_sol_su)
-      tracer( :, i ) =                                                         &
-        real( cor_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cor_sol_su( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cor_sol_bc)
-      tracer( :, i ) =                                                         &
-        real( cor_sol_bc( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cor_sol_bc( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cor_sol_om)
-      tracer( :, i ) =                                                         &
-        real( cor_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cor_sol_om( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cor_sol_ss)
-      tracer( :, i ) =                                                         &
-        real( cor_sol_ss( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cor_sol_ss( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cor_sol_du)
-      tracer( :, i ) =                                                         &
-        real( cor_sol_du( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cor_sol_du( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_ait_ins)
-      tracer( :, i ) =                                                         &
-        real( n_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_ait_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ait_ins_bc)
-      tracer( :, i ) =                                                         &
-        real( ait_ins_bc( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ait_ins_bc( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ait_ins_om)
-      tracer( :, i ) =                                                         &
-        real( ait_ins_om( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( ait_ins_om( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_acc_ins)
-      tracer( :, i ) =                                                         &
-        real( n_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_acc_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_acc_ins_du)
-      tracer( :, i ) =                                                         &
-        real( acc_ins_du( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( acc_ins_du( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_cor_ins)
-      tracer( :, i ) =                                                         &
-        real( n_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( n_cor_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_cor_ins_du)
-      tracer( :, i ) =                                                         &
-        real( cor_ins_du( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          tracer( i, 1, k, m ) =                                               &
+            real( cor_ins_du( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA tracer field: ', tracer_names(i)
+        'Missing required UKCA tracer field: ', tracer_names(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! -- Non-transported prognostics --
-  n_fields = size(ntp_names)
-  allocate(ntp(nlayers, n_fields))
-  ntp = 0.0_r_um
+  m_fields = size(ntp_names)
+  allocate( ntp( seg_len, 1, nlayers, m_fields ) )
+  ntp(:,:,:,:) = 0.0_r_um
 
-  do i = 1, n_fields
-    select case(ntp_names(i))
+  do m = 1, m_fields
+    select case(ntp_names(m))
     case(fldname_cloud_drop_no_conc)
-      ntp( :, i ) =                                                            &
-        real( cloud_drop_no_conc( map_wth(1) + 1 : map_wth(1) + nlayers ),     &
-              r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( cloud_drop_no_conc( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_surfarea)
       ! Aerosol surface area is not used in this configuration but UKCA
       ! requires it to be present for potential use in diagnostic calculations.
       ! Pass zero for now pending UKCA API extension to support diagnostics.
     case(fldname_drydp_ait_sol)
-      ntp( :, i ) =                                                            &
-        real( drydp_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( drydp_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_drydp_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( drydp_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( drydp_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_drydp_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( drydp_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( drydp_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_drydp_ait_ins)
-      ntp( :, i ) =                                                            &
-        real( drydp_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( drydp_ait_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_drydp_acc_ins)
-      ntp( :, i ) =                                                            &
-        real( drydp_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( drydp_acc_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_drydp_cor_ins)
-      ntp( :, i ) =                                                            &
-        real( drydp_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( drydp_cor_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_wetdp_ait_sol)
-      ntp( :, i ) =                                                            &
-        real( wetdp_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( wetdp_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_wetdp_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( wetdp_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( wetdp_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_wetdp_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( wetdp_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( wetdp_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rhopar_ait_sol)
-      ntp( :, i ) =                                                            &
-        real( rhopar_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( rhopar_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rhopar_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( rhopar_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( rhopar_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rhopar_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( rhopar_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( rhopar_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rhopar_ait_ins)
-      ntp( :, i ) =                                                            &
-        real( rhopar_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( rhopar_ait_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rhopar_acc_ins)
-      ntp( :, i ) =                                                            &
-        real( rhopar_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( rhopar_acc_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rhopar_cor_ins)
-      ntp( :, i ) =                                                            &
-        real( rhopar_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( rhopar_cor_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_su_ait_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_su_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_su_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_bc_ait_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_bc_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_bc_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_om_ait_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_om_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_om_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_wat_ait_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_wat_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_wat_ait_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_su_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_su_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_su_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_bc_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_bc_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_bc_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_om_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_om_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_om_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_ss_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_ss_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_ss_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_du_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_du_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_du_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_wat_acc_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_wat_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_wat_acc_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_su_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_su_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_su_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_bc_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_bc_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_bc_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_om_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_om_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_om_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_ss_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_ss_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_ss_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_du_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_du_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_du_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_wat_cor_sol)
-      ntp( :, i ) =                                                            &
-        real( pvol_wat_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_wat_cor_sol( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_bc_ait_ins)
-      ntp( :, i ) =                                                            &
-        real( pvol_bc_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_bc_ait_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_om_ait_ins)
-      ntp( :, i ) =                                                            &
-        real( pvol_om_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_om_ait_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_du_acc_ins)
-      ntp( :, i ) =                                                            &
-        real( pvol_du_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_du_acc_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_pvol_du_cor_ins)
-      ntp( :, i ) =                                                            &
-        real( pvol_du_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( pvol_du_cor_ins( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_no2)
-      ntp( :, i ) =                                                            &
-        real( no2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( no2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_hcl)
-      ntp( :, i ) =                                                            &
-        real( hcl( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( hcl( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_bro)
-      ntp( :, i ) =                                                            &
-        real( bro( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( bro( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_o1d)
-      ntp( :, i ) =                                                            &
-        real( o1d( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( o1d( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     ! The next set can be tracers or ntp depending on l_ukca_ro2_ntp
     case(fldname_meoo)
-      ntp( :, i ) =                                                            &
-        real( meoo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( meoo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_meco3)
-      ntp( :, i ) =                                                            &
-        real( meco3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( meco3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_etoo)
-      ntp( :, i ) =                                                            &
-        real( etoo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( etoo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_iso2)
-      ntp( :, i ) =                                                            &
-        real( iso2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( iso2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_n_proo)
-      ntp( :, i ) =                                                            &
-        real( n_proo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( n_proo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_i_proo)
-      ntp( :, i ) =                                                            &
-        real( i_proo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( i_proo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_etco3)
-      ntp( :, i ) =                                                            &
-        real( etco3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( etco3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_mecoch2oo)
-      ntp( :, i) =                                                             &
-        real( mecoch2oo( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( mecoch2oo( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_macro2)
-      ntp( :, i ) =                                                            &
-        real( macro2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ntp( i, 1, k, m ) =                                                  &
+            real( macro2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA NTP: ', ntp_names(i)
+        'Missing required UKCA NTP: ', ntp_names(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
@@ -2025,48 +2688,79 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   ! supported as environmental drivers in the UKCA API.
   ! N.B. These are required for interf_z calculation below
 
-  do k = 0, nlayers
-    ! height of theta levels from centre of planet
-    r_theta_levels( 1, 1, k ) = real( height_wth( map_wth(1) + k ), r_um ) +   &
-                                planet_radius
+  ! height of theta levels from centre of planet
+  do i = 1, seg_len
+    do k = 0, nlayers
+      r_theta_levels( i, 1, k ) = real( height_wth( map_wth(1,i) + k ), r_um ) &
+                                  + planet_radius
+    end do
   end do
-  do k = 1, nlayers
-    ! height of rho levels from centre of planet
-    r_rho_levels( 1, 1, k ) = real( height_w3( map_w3(1) + k - 1 ), r_um ) +   &
-                              planet_radius
+
+  ! height of rho levels from centre of planet
+  do i = 1, seg_len
+    do k = 1, nlayers
+      r_rho_levels( i, 1, k ) = real( height_w3( map_w3(1,i) + k - 1 ), r_um ) &
+                                + planet_radius
+    end do
   end do
 
   ! Set up grid cell volume and mass.
   ! Volume is represented by det(J) on shifted mesh, except for the lowest level
   ! where it is detj_shifted(0) + detj_shifted(1) to mimic the UM equivalent :
   !  r_rho_levels(2) - r_theta_levels(0)
-  do k = 2, nlayers
-    grid_volume(1,1,k) = real( detj_shifted( map_wth(1) + k ), r_um )
+  do i = 1, seg_len
+    do k = 2, nlayers
+      grid_volume(i,1,k) = real( detj_shifted( map_wth(1,i) + k ), r_um )
+    end do
   end do
-  grid_volume(1,1,1) = real( detj_shifted( map_wth(1) + 1 ) +                  &
-                             detj_shifted( map_wth(1) + 0 ), r_um )
+
+  do i = 1, seg_len
+    grid_volume(i,1,1) = real( detj_shifted( map_wth(1,i) + 1 ) +              &
+                               detj_shifted( map_wth(1,i) + 0 ), r_um )
+  end do
 
   ! Derive grid airmass as (rho * volume)
   !  Using wet rho in first instance to replicate UM method used
-  do k = 1, nlayers
-    grid_airmass(1,1,k) = real ( wetrho_in_wth( map_wth(1) + k ), r_um )   &
-                          * grid_volume(1,1,k)
+  do i = 1, seg_len
+    do k = 1, nlayers
+      grid_airmass(i,1,k) = real ( wetrho_in_wth( map_wth(1,i) + k ), r_um ) * &
+                            grid_volume(i,1,k)
+    end do
   end do
 
   ! Determine no. of land points (0 or 1) and set land/sea indicator
-
-  frac_land = 0.0_r_um
-  do i = 1, n_land_tile
-    frac_land = frac_land + real( tile_fraction( map_tile(1) + i - 1 ), r_um )
+  frac_land(:) = 0.0_r_um
+  do i = 1, seg_len
+    do m = 1, n_land_tile
+        frac_land( i ) = frac_land( i ) +                                      &
+          real( tile_fraction( map_tile(1,i) + m - 1 ), r_um )
+    end do
   end do
 
-  if (frac_land > 0.0_r_um) then
-    l_land = .true.
-    n_land_pts = 1
-  else
-    l_land = .false.
-    n_land_pts = 0
-  end if
+
+  l_land_any = .false.
+  n_land_pts = 0
+  do i = 1, seg_len
+    if (frac_land(i) > 0.0_r_um) then
+      l_land_any = .true.
+      n_land_pts = n_land_pts + 1
+      land_sea_mask(i,1) = .true.
+    else
+      land_sea_mask(i,1) = .false.
+    end if
+  end do
+
+  allocate( z0_surft( n_land_pts, n_land_tile ) )
+  allocate( lai_pft( n_land_pts, npft ) )
+  allocate( canht_pft( n_land_pts, npft ) )
+  allocate( l_tile_active( n_land_pts, n_land_tile ) )
+
+  allocate( z0m_soil_gb( n_land_pts ) )
+
+  ! Unused output fields from JULES sparm routine
+  allocate( catch_snow_surft( n_land_pts, n_land_tile ) )
+  allocate( catch_surft( n_land_pts, n_land_tile ) )
+  allocate( z0h_bare_surft( n_land_pts, n_land_tile ) )
 
 !  ! Set up JULES fields needed
   call ancil_info_alloc(n_land_pts, t_i_length, t_j_length, nice, nsoilt,      &
@@ -2075,514 +2769,827 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   call urban_param_alloc(n_land_pts, l_urban2t, l_moruses, urban_param_data)
   call urban_param_assoc(urban_param, urban_param_data)
 
-  if (l_land) then
+  k = 0
+  ainfo%land_index(:) = 0
+  do i = 1, seg_len
+    if (frac_land(i) > 0.0_r_um) then
+      k = k + 1
+      ainfo%land_index(k) = i
+    end if
+  end do
+
+  if ( l_land_any ) then
+
     ! Tile fractions with respect to land area
-    do i = 1, n_land_tile
-      frac_surft( 1, i ) =                                                     &
-        real( tile_fraction( map_tile(1) + i - 1 ), r_um ) / frac_land
+    do i = 1, n_land_pts
+      do m = 1, n_land_tile
+
+        ainfo%frac_surft( i, m ) =                                             &
+         real( tile_fraction( map_tile( 1, ainfo%land_index(i) ) + m - 1 ),    &
+               r_um ) / frac_land( ainfo%land_index(i) )
+
+      end do
     end do
+
     ! Call JULES subroutine to determine number of active points (0 or 1)
     ! for each tile type
-    call tilepts( n_land_pts, frac_surft, ainfo%surft_pts, surft_index,        &
-                  ainfo%l_lice_point, ainfo%l_lice_surft )
+    call tilepts( n_land_pts, ainfo%frac_surft, ainfo%surft_pts,               &
+                  ainfo%surft_index, ainfo%l_lice_point, ainfo%l_lice_surft )
+
     ! Fields on plant functional type tiles: leaf area index & canopy height
-    do i = 1, npft
-      lai_pft( 1, i ) = real( leaf_area_index(map_pft(1) + i - 1), r_um )
-      canht_pft( 1, i ) = real( canopy_height(map_pft(1) + i - 1), r_um )
+    do i = 1, n_land_pts
+      do m = 1, npft
+
+        lai_pft( i, m ) = real( leaf_area_index( map_pft( 1,                   &
+                                                       ainfo%land_index(i) ) + &
+                                                 m - 1 ), r_um )
+
+        canht_pft( i, m ) = real( canopy_height( map_pft( 1,                   &
+                                                       ainfo%land_index(i) ) + &
+                                                 m - 1 ), r_um )
+
+      end do
     end do
+
     ! Roughness length on tiles (z0_surft) from JULES
-    z0m_soil_gb(1)     = real( soil_roughness(map_2d(1)), r_um )
-    urban_param%ztm_gb = real(urbztm(map_2d(1)), r_um)
-    call sparm( n_land_pts, n_land_tile, ainfo%surft_pts, surft_index,         &
-                frac_surft, canht_pft, lai_pft, z0m_soil_gb,                   &
-                catch_snow_surft, catch_surft, z0_surft, z0h_bare_surft,       &
+    do i = 1, n_land_pts
+      z0m_soil_gb(i)= real( soil_roughness( map_2d( 1, ainfo%land_index(i) ) ),&
+                            r_um )
+    end do
+
+    ! Urban ancillaries
+    urban_param%ztm_gb(:) = 0.0_r_um
+    if ( l_urban2t ) then
+      do i = 1, n_land_pts
+        urban_param%ztm_gb(i)= real( urbztm( map_2d( 1, ainfo%land_index(i) )),&
+                                     r_um )
+      end do
+    end if
+
+    call sparm( n_land_pts, n_land_tile, ainfo%surft_pts, ainfo%surft_index,   &
+                ainfo%frac_surft, canht_pft, lai_pft,                          &
+                z0m_soil_gb, catch_snow_surft,                                 &
+                catch_surft, z0_surft, z0h_bare_surft,                         &
                 urban_param%ztm_gb )
   end if
 
   call urban_param_nullify(urban_param)
+
   call urban_param_dealloc(urban_param_data)
 
   ! Drivers in scalar group
 
-  n_fields = size(env_names_scalar_real)
-  allocate(environ_scalar_real(n_fields))
-  environ_scalar_real = 0
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !
+  ! Note unusual behaviour
+  !
+  ! sin_stellar_declination and eqn_of_time are scalars
+  ! but have been indexed with map_2d(1,1)
+  !
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-  do i = 1, n_fields
-    select case(env_names_scalar_real(i))
+  m_fields = size(env_names_scalar_real)
+  allocate( environ_scalar_real( m_fields ) )
+  environ_scalar_real(:) = 0.0_r_um
+
+  do m = 1, m_fields
+    select case(env_names_scalar_real(m))
     case(fldname_sin_declination)
-      environ_scalar_real(i) =                                                 &
-        real( sin_stellar_declination_rts(map_2d(1)), r_um )
+      environ_scalar_real( m ) =                                               &
+        real( sin_stellar_declination_rts( map_2d(1,1) ), r_um )
     case(fldname_equation_of_time)
-      environ_scalar_real(i) = real( stellar_eqn_of_time_rts(map_2d(1)), r_um )
+      environ_scalar_real( m ) =                                               &
+        real( stellar_eqn_of_time_rts( map_2d(1,1) ), r_um )
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_scalar_real(i)
+        'Missing required UKCA environment field: ', env_names_scalar_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! Drivers in flat grid groups (scalar values)
 
-  n_fields = size(env_names_flat_integer)
-  allocate(environ_flat_integer(n_fields))
+  m_fields = size(env_names_flat_integer)
+  allocate( environ_flat_integer( seg_len, 1, m_fields ) )
   environ_flat_integer = 0
 
-  do i = 1, n_fields
-    select case(env_names_flat_integer(i))
+  do m = 1, m_fields
+    select case(env_names_flat_integer(m))
     case(fldname_kent)
-      environ_flat_integer(i) = int( level_ent(map_2d(1)), i_um )
+      do i = 1, seg_len
+        environ_flat_integer(i,1,m) = int( level_ent( map_2d(1,i) ), i_um )
+      end do
     case(fldname_kent_dsc)
-      environ_flat_integer(i) = int( level_ent_dsc(map_2d(1)), i_um )
+      do i = 1, seg_len
+        environ_flat_integer(i,1,m) = int( level_ent_dsc( map_2d(1,i) ), i_um)
+      end do
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_flat_integer(i)
+        'Missing required UKCA environment field: ', env_names_flat_integer(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
-  n_fields = size(env_names_flat_real)
-  allocate(environ_flat_real(n_fields))
-  environ_flat_real = 0.0_r_um
+  m_fields = size( env_names_flat_real )
+  allocate( environ_flat_real( seg_len, 1, m_fields ) )
+  environ_flat_real(:,:,:) = 0.0_r_um
 
-  do i = 1, n_fields
-    select case(env_names_flat_real(i))
+  do m = 1, m_fields
+    select case(env_names_flat_real(m))
     case(fldname_latitude)
       ! Latitude (degrees N)
-      environ_flat_real(i) =                                                   &
-        real( radians_to_degrees * latitude(map_2d(1)), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) =                                         &
+          real( radians_to_degrees * latitude(map_2d(1,i)), r_um )
+      end do
     case(fldname_longitude)
       ! Longitude (degrees E, >=0, <360)
-      environ_flat_real(i) =                                                   &
-        real( radians_to_degrees * longitude(map_2d(1)), r_um )
-      if (environ_flat_real(i) < 0.0_r_um)                                     &
-        environ_flat_real(i) = environ_flat_real(i) + 360.0_r_um
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) =                                         &
+          real( radians_to_degrees * longitude(map_2d(1,i)), r_um )
+
+        if (environ_flat_real( i, 1, m ) < 0.0_r_um) then
+          environ_flat_real( i, 1, m ) = environ_flat_real( i, 1, m ) +        &
+                                         360.0_r_um
+        end if
+      end do
     case(fldname_sin_latitude)
       ! Sin latitude
-      environ_flat_real(i) = real( sin(latitude(map_2d(1))), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( sin(latitude(map_2d(1,i))), r_um )
+      end do
     case(fldname_cos_latitude)
       ! Cos latitude
-      environ_flat_real(i) = real( cos(latitude(map_2d(1))), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( cos(latitude(map_2d(1,i))), r_um )
+      end do
     case(fldname_tan_latitude)
       ! Tan latitude
-      environ_flat_real(i) = real( tan(latitude(map_2d(1))), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( tan(latitude(map_2d(1,i))), r_um )
+      end do
     case(fldname_frac_seaice)
       ! Sea-ice fraction with respect to sea area
-      frac_seaice = 0.0_r_um
-      frac_sea = 1.0_r_um - frac_land
-      if (frac_sea > 0.0_r_um) then
-        do j = first_sea_ice_tile, first_sea_ice_tile + n_sea_ice_tile - 1
-          frac_seaice = frac_seaice +                                          &
-            real( tile_fraction( map_tile(1) + j - 1 ), r_um ) / frac_sea
-        end do
-      end if
-      environ_flat_real(i) = frac_seaice
+      frac_sea(:) = 0.0_r_um
+      do i = 1, seg_len
+        frac_sea(i) = 1.0_r_um - frac_land(i)
+      end do
+
+      frac_seaice(:) = 0.0_r_um
+      do i = 1, seg_len
+        if (frac_sea(i) > 0.0_r_um) then
+          do j = first_sea_ice_tile, first_sea_ice_tile + n_sea_ice_tile - 1
+            frac_seaice(i) = frac_seaice(i) +                                  &
+              real( tile_fraction( map_tile(1,i) + j - 1 ), r_um ) / frac_sea(i)
+          end do
+        end if
+      end do
+
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = frac_seaice(i)
+      end do
+
     case(fldname_tstar)
       ! Cell mean surface temperature
-      meanval = 0.0_r_um
-      do j = 1, n_surf_tile
-        meanval = meanval +                                                    &
-          real( tile_fraction( map_tile(1) + j - 1 ), r_um ) *                 &
-          real( tile_temperature( map_tile(1) + j - 1 ), r_um )
+      meanval(:) = 0.0_r_um
+      do i = 1, seg_len
+        do j = 1, n_surf_tile
+          meanval(i) = meanval(i) +                                            &
+            ( real( tile_fraction(    map_tile(1,i) + j - 1 ), r_um ) *        &
+              real( tile_temperature( map_tile(1,i) + j - 1 ), r_um ) )
+        end do
       end do
-      environ_flat_real(i) = meanval
+
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = meanval(i)
+      end do
+
     case(fldname_pstar)
       ! Surface air pressure
-      environ_flat_real(i) = p_zero *                                          &
-        real( exner_in_wth(map_wth(1) + 0), r_um ) ** ( 1.0_r_um / kappa )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = p_zero *                                &
+          real( exner_in_wth(map_wth(1,i) + 0), r_um ) ** ( 1.0_r_um / kappa )
+      end do
     case(fldname_rough_length)
       ! Cell mean surface roughness
-      environ_flat_real(i) = real( z0m(map_2d(1)) , r_um)
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( z0m(map_2d(1,i)), r_um)
+      end do
     case(fldname_ustar)
       ! Friction velocity
-      environ_flat_real(i) = real( ustar(map_2d(1)), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( ustar(map_2d(1,i)), r_um )
+      end do
     case(fldname_surf_hf)
       ! Cell mean surface heat flux
-      meanval = 0.0_r_um
-      do j = 1, n_surf_tile
-        meanval = meanval +                                                    &
-          real( tile_fraction( map_tile(1) + j - 1 ), r_um ) *                 &
-          real( tile_heat_flux( map_tile(1) + j - 1 ), r_um )
+      meanval(:) = 0.0_r_um
+      do i = 1, seg_len
+        do j = 1, n_surf_tile
+          meanval(i) = meanval(i) +                                            &
+            ( real( tile_fraction(  map_tile(1,i) + j - 1 ), r_um ) *          &
+              real( tile_heat_flux( map_tile(1,i) + j - 1 ), r_um ) )
+        end do
       end do
-      environ_flat_real(i) = meanval
+
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = meanval(i)
+      end do
     case(fldname_zbl)
       ! Boundary layer height
-      environ_flat_real(i) = real( zh(map_2d(1)), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( zh(map_2d(1,i)), r_um )
+      end do
     case(fldname_u_scalar_10m)
       ! Wind speed at 10 m
-      environ_flat_real(i) = real( wspd10m(map_2d(1)), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( wspd10m(map_2d(1,i)), r_um )
+      end do
     case(fldname_chloro_sea)
-      environ_flat_real(i) = real( chloro_sea(map_2d(1)), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( chloro_sea(map_2d(1,i)), r_um )
+      end do
     case(fldname_dms_sea_conc)
       ! Sea surface DMS concentration
       ! (Replace fill value with zeros to avoid potential unsafe multiplication
       ! of fill values by zero over land in UKCA DMS flux calculation and/or
       ! use of fill values if present at coastal grid points)
-      environ_flat_real(i) = max( real( dms_conc_ocean(map_2d(1)), r_um ),     &
-                                  0.0_r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = max( real( dms_conc_ocean(map_2d(1,i)), &
+                                       r_um ), 0.0_r_um )
+      end do
     case(fldname_dust_flux_div1)
       ! Dust emission flux in division 1
-      environ_flat_real(i) = real( dust_flux(map_dust(1) + 0), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( dust_flux(map_dust(1,i) + 0),     &
+                                       r_um )
+      end do
     case(fldname_dust_flux_div2)
       ! Dust emission flux in division 2
-      environ_flat_real(i) = real( dust_flux(map_dust(1) + 1), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( dust_flux(map_dust(1,i) + 1),     &
+                                       r_um )
+      end do
     case(fldname_dust_flux_div3)
       ! Dust emission flux in division 3
-      environ_flat_real(i) = real( dust_flux(map_dust(1) + 2), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( dust_flux(map_dust(1,i) + 2),     &
+                                       r_um )
+      end do
     case(fldname_dust_flux_div4)
       ! Dust emission flux in division 4
-      environ_flat_real(i) = real( dust_flux(map_dust(1) + 3), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( dust_flux(map_dust(1,i) + 3),     &
+                                       r_um )
+      end do
     case(fldname_dust_flux_div5)
       ! Dust emission flux in division 5
-      environ_flat_real(i) = real( dust_flux(map_dust(1) + 4), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( dust_flux(map_dust(1,i) + 4),     &
+                                       r_um )
+      end do
     case(fldname_dust_flux_div6)
       ! Dust emission flux in division 6
-      environ_flat_real(i) = real( dust_flux(map_dust(1) + 5), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( dust_flux(map_dust(1,i) + 5),     &
+                                       r_um )
+      end do
     case(fldname_zhsc)
       ! Height at top of decoupled stratocumulus layer
-      environ_flat_real(i) = real( zhsc(map_2d(1)), r_um )
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real( zhsc(map_2d(1,i)), r_um )
+      end do
     case(fldname_surf_wetness)
-      tot_precip = max(0.0_r_def, ls_rain_3d(map_wth(1)+1)   &
-                                + ls_snow_3d(map_wth(1)+1)   &
-                                + conv_rain_3d(map_wth(1)+1) &
-                                + conv_snow_3d(map_wth(1)+1) )
-      if ( surf_wetness(map_2d(1)) < tol) then
-        ! Surface was dry last timestep, check if it has rained since
-        if (tot_precip > raincrit) then
-          surf_wetness(map_2d(1)) = 1.0_r_def
-        end if
-      else
-        ! Surface was wet last timestep, check if more rain since
-        if (tot_precip > tol) then
-          ! Check if there is enough rain to reset surf_wet to 1.0.
-          ! Otherwise, it is raining but less than raincrit so surface
-          ! does not dry but is not reset to 1 it just keeps the same
-          ! value of surf_wet
+      do i = 1, seg_len
+
+        tot_precip = max(0.0_r_def,   ls_rain_3d(map_wth(1,i)+1)               &
+                                    + ls_snow_3d(map_wth(1,i)+1)               &
+                                    + conv_rain_3d(map_wth(1,i)+1)             &
+                                    + conv_snow_3d(map_wth(1,i)+1) )
+
+        if ( surf_wetness(map_2d(1,i)) < tol) then
+
+          ! Surface was dry last timestep, check if it has rained since
           if (tot_precip > raincrit) then
-            surf_wetness(map_2d(1)) = 1.0_r_def
+            surf_wetness(map_2d(1,i)) = 1.0_r_def
           end if
+
         else
-          ! Not raining, so the surface is gradually drying.
-          surf_wetness(map_2d(1)) = max(0.0_r_def, surf_wetness(map_2d(1)) &
+
+          ! Surface was wet last timestep, check if more rain since
+          if (tot_precip > tol) then
+
+            ! Check if there is enough rain to reset surf_wet to 1.0.
+            ! Otherwise, it is raining but less than raincrit so surface
+            ! does not dry but is not reset to 1 it just keeps the same
+            ! value of surf_wet
+            if (tot_precip > raincrit) then
+              surf_wetness(map_2d(1,i)) = 1.0_r_def
+            end if
+
+          else
+
+            ! Not raining, so the surface is gradually drying.
+            surf_wetness(map_2d(1,i))=max(0.0_r_def, surf_wetness(map_2d(1,i)) &
                                                  - timestep/ztodry)
+          end if
         end if
-      end if
-      environ_flat_real(i) = real(surf_wetness(map_2d(1)), r_um)
+
+      end do
+
+      do i = 1, seg_len
+        environ_flat_real( i, 1, m ) = real(surf_wetness(map_2d(1,i)), r_um)
+      end do
+
     case(fldname_grid_surf_area)
       ! Cell Area
-      environ_flat_real(i) = real(grid_surf_area(map_2d(1)), r_um)
+      environ_flat_real( i, 1, m ) = real(grid_surf_area(map_2d(1,i)), r_um)
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_flat_real(i)
+        'Missing required UKCA environment field: ', env_names_flat_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
-  n_fields = size(env_names_flat_logical)
-  allocate(environ_flat_logical(n_fields))
+  m_fields = size(env_names_flat_logical)
+  allocate( environ_flat_logical( seg_len, 1, m_fields ) )
   environ_flat_logical = .false.
 
-  do i = 1, n_fields
-    select case(env_names_flat_logical(i))
-    ! Land-sea mask
+  do m = 1, m_fields
+    select case(env_names_flat_logical(m))
     case(fldname_l_land)
-      environ_flat_logical(i) = l_land
+      ! Land-sea mask
+      do i = 1, seg_len
+        environ_flat_logical( i, 1, m ) = land_sea_mask(i,1)
+      end do
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_flat_logical(i)
+        'Missing required UKCA environment field: ', env_names_flat_logical(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! Drivers in flat grid plant functional type tile group (1D fields)
 
-  n_fields = size(env_names_flatpft_real)
-  allocate(environ_flatpft_real( npft, n_fields ))
-  environ_flatpft_real = 0.0_r_um
+  m_fields = size(env_names_flatpft_real)
+  allocate(environ_flatpft_real( seg_len, 1, npft, m_fields ))
+  environ_flatpft_real(:,:,:,:) = 0.0_r_um
 
-  do i = 1, n_fields
-    select case(env_names_flatpft_real(i))
+  do m = 1, m_fields
+    select case(env_names_flatpft_real(m))
     case(fldname_stcon)
       ! Stomatal conductance
-      if (l_land) then
-        do j = 1, npft
-          environ_flatpft_real( j, i ) =                                       &
-            real( gc_tile( map_tile(1) + j - 1 ), r_um )
+      if (l_land_any) then
+        do i = 1, seg_len
+          do j = 1, npft
+            environ_flatpft_real( i, 1, j, m ) =                               &
+              real( gc_tile( map_tile(1,i) + j - 1 ), r_um )
+          end do
         end do
       end if
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_flatpft_real(i)
+        'Missing required UKCA environment field: ', env_names_flatpft_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! Drivers in full-height grid group (1D fields)
 
-  n_fields = size(env_names_fullht_real)
-  allocate(environ_fullht_real( nlayers, n_fields ))
-  environ_fullht_real = 0.0_r_um
+  m_fields = size(env_names_fullht_real)
+  allocate(environ_fullht_real( seg_len, 1, nlayers, m_fields ))
+  environ_fullht_real(:,:,:,:) = 0.0_r_um
 
-  do i = 1, n_fields
-    select case(env_names_fullht_real(i))
+  do m = 1, m_fields
+    select case(env_names_fullht_real(m))
     case(fldname_o3_offline)
       ! Ozone mmr
-      environ_fullht_real( :, i ) =                                            &
-        real( o3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( o3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_no3_offline)
       ! Nitrate mmr
-      environ_fullht_real( :, i ) =                                            &
-        real( no3( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( no3( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_oh_offline)
       ! Hydroxyl radical mmr
-      environ_fullht_real( :, i ) =                                            &
-        real( oh( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( oh( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ho2_offline)
       ! Hydroperoxyl radical mmr
-      environ_fullht_real( :, i ) =                                            &
-        real( ho2( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( ho2( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_h2o2_limit)
       ! Hydrogen peroxide mmr upper limit
-      environ_fullht_real( :, i ) =                                            &
-        real( h2o2_limit( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( h2o2_limit( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_theta)
       ! Potential temperature
-      environ_fullht_real( :, i ) =                                            &
-        real( theta_wth( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( theta_wth( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_exner_theta_lev)
       ! Dimensionless Exner function
-      environ_fullht_real( :, i ) =                                            &
-        real( exner_in_wth( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( exner_in_wth( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_p_theta_lev)
       ! Air pressure on theta levels
-      environ_fullht_real( :, i ) = p_zero *                                   &
-        real( exner_in_wth( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )    &
-        ** ( 1.0_r_um / kappa )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            p_zero *                                                           &
+            real( exner_in_wth( map_wth(1,i) + k ), r_um )**( 1.0_r_um / kappa )
+        end do
+      end do
     case(fldname_p_rho_lev)
       ! Air pressure on rho levels
-      environ_fullht_real( :, i ) = p_zero *                                   &
-        real( exner_in_w3( map_w3(1) + 0 : map_w3(1) + nlayers - 1 ), r_um )   &
-        ** ( 1.0_r_um / kappa )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            p_zero *                                                           &
+            real( exner_in_w3( map_w3(1,i) + k-1 ), r_um )**( 1.0_r_um / kappa )
+        end do
+      end do
     case(fldname_q)
       ! Water vapour mixing ratio
-      environ_fullht_real( :, i ) =                                            &
-        real( m_v_n( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( m_v_n( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_qcl)
       ! Cloud liquid water mixing ratio
-      environ_fullht_real( :, i ) =                                            &
-        real( m_cl_n( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( m_cl_n( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_qcf)
       ! Cloud ice mixing ratio
-      environ_fullht_real( :, i ) =                                            &
-        real( m_ci_n( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( m_ci_n( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_bulk_cloud_frac)
       ! Bulk cloud fraction
-      environ_fullht_real( :, i ) =                                            &
-        real( cf_bulk( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( cf_bulk( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ls_rain3d)
       ! Large scale rainfall flux
-      environ_fullht_real( :, i ) =                                            &
-        real( ls_rain_3d( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( ls_rain_3d( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_ls_snow3d)
       ! Large scale snowfall flux
-      environ_fullht_real( :, i ) =                                            &
-        real( ls_snow_3d( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( ls_snow_3d( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_conv_rain3d)
       ! Convective rainfall flux
-      environ_fullht_real( :, i ) =                                            &
-        real( conv_rain_3d( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( conv_rain_3d( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_conv_snow3d)
       ! Convective snowfall flux
-      environ_fullht_real( :, i ) =                                            &
-        real( conv_snow_3d( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( conv_snow_3d( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rho_r2)
-      do k = 1, nlayers
-        ! Density * r * r
-        rho_r2 = real( wetrho_in_w3( map_w3(1) + k - 1 ) *                     &
-                       (r_rho_levels( 1, 1, k )**2 ), r_um )
-        environ_fullht_real( k, i) = rho_r2
+      ! Density * r * r
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( ( wetrho_in_w3( map_w3(1,i) + k - 1 ) ) *                    &
+                  ( r_rho_levels( i, 1, k )**2 ), r_um )
+        end do
       end do
     case(fldname_liq_cloud_frac)
       ! Liquid cloud fraction
-      environ_fullht_real( :, i ) =                                            &
-        real( cf_liq( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( cf_liq( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_autoconv)
       ! Rain autoconversion rate
-      environ_fullht_real( :, i ) =                                            &
-        real( autoconv( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( autoconv( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_accretion)
       ! Rain accretion rate
-      environ_fullht_real( :, i ) =                                            &
-        real( accretion( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( accretion( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rim_cry)
       ! Riming rate for ice crystals
-      environ_fullht_real( :, i ) =                                            &
-        real( rim_cry( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( rim_cry( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_rim_agg)
       ! Riming rate for ice aggregates
-      environ_fullht_real( :, i ) =                                            &
-        real( rim_agg( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( rim_agg( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_vertvel)
       ! Vertical velocity
-      environ_fullht_real( :, i ) =                                            &
-        real( u3_in_wth( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =                                  &
+            real( u3_in_wth( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case(fldname_grid_volume)
       ! Grid cell volume
-      environ_fullht_real( :, i ) =  grid_volume(1,1,:)
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =  grid_volume( i, 1, k )
+        end do
+      end do
     case(fldname_grid_airmass)
       ! Grid cell air mass
-      environ_fullht_real( :, i ) =  grid_airmass(1,1,:)
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullht_real( i, 1, k, m ) =  grid_airmass( i, 1, k )
+        end do
+      end do
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_fullht_real(i)
+        'Missing required UKCA environment field: ', env_names_fullht_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! Drivers in full-height plus level zero grid group (1D fields)
+  m_fields = size(env_names_fullht0_real)
+  allocate( environ_fullht0_real( seg_len, 1, 0:nlayers, m_fields ) )
+  environ_fullht0_real(:,:,:,:) = 0.0_r_um
 
-  n_fields = size(env_names_fullht0_real)
-  allocate(environ_fullht0_real( 0:nlayers, n_fields ))
-  environ_fullht0_real = 0.0_r_um
-
-  do i = 1, n_fields
-    select case(env_names_fullht0_real(i))
+  do m = 1, m_fields
+    select case(env_names_fullht0_real(m))
     case(fldname_interf_z)
-      environ_fullht0_real( 0, i ) = 0.0_r_um
-      do k = 1, nlayers - 1
-        environ_fullht0_real( k, i ) =                                         &
-          r_rho_levels( 1, 1, k + 1 ) - r_theta_levels( 1, 1, 0 )
+      ! Set zeroth level to zero
+      do i = 1, seg_len
+        k = 0
+        environ_fullht0_real( i, 1, k, m ) = 0.0_r_um
       end do
-      environ_fullht0_real( nlayers, i ) =                                     &
-        r_theta_levels( 1, 1, nlayers ) - r_theta_levels( 1, 1, 0 )
+
+      do i = 1, seg_len
+        do k = 1, nlayers - 1
+          environ_fullht0_real( i, 1, k, m ) =                                 &
+            r_rho_levels( i, 1, k+1 ) - r_theta_levels( i, 1, 0 )
+        end do
+      end do
+
+      do i = 1, seg_len
+        environ_fullht0_real( i, 1, nlayers, m ) =                             &
+          r_theta_levels( i, 1, nlayers ) - r_theta_levels( i, 1, 0 )
+      end do
+
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_fullht0_real(i)
+        'Missing required UKCA environment field: ', env_names_fullht0_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! Drivers in full-height plus one grid group (1D fields)
+  m_fields = size(env_names_fullhtp1_real)
+  nlayers_plus_one = nlayers + 1
+  allocate( environ_fullhtp1_real( seg_len, 1, nlayers_plus_one, m_fields ) )
+  environ_fullhtp1_real(:,:,:,:) = 0.0_r_um
 
-  n_fields = size(env_names_fullhtp1_real)
-  allocate(environ_fullhtp1_real( nlayers + 1, n_fields ))
-  environ_fullhtp1_real = 0.0_r_um
-
-  do i = 1, n_fields
-    select case(env_names_fullhtp1_real(i))
+  do m = 1, m_fields
+    select case(env_names_fullhtp1_real(m))
     case(fldname_exner_rho_lev)
-      environ_fullhtp1_real( 1 : nlayers, i ) =                                &
-        real( exner_in_w3( map_w3(1) + 0 : map_w3(1) + nlayers - 1 ), r_um )
+
+      do i = 1, seg_len
+        do k = 1, nlayers
+          environ_fullhtp1_real( i, 1, k, m ) =                                &
+            real( exner_in_w3( map_w3(1,i) + k - 1 ), r_um )
+        end do
+      end do
+
       ! exner_rho_lev is required above the level at which exner_in_w3 is
       ! defined so is approximated here by extrapolation.
       ! This is a temporary solution pending changes to UKCA to replace the
       ! UM-specific routine for adding emissions to tracers trsrce.
-      exner_rho_top = real( exner_in_w3( map_w3(1) + nlayers - 1 ), r_um )
-      exner_theta_top = real( exner_in_wth( map_wth(1) + nlayers ), r_um )
-      environ_fullhtp1_real( nlayers + 1, i ) =                                &
-        exner_rho_top + 2.0_r_um * (exner_theta_top - exner_rho_top)
+
+      do i = 1, seg_len
+
+        exner_rho_top = real( exner_in_w3( map_w3(1,i) + nlayers - 1 ), r_um )
+
+        exner_theta_top = real( exner_in_wth( map_wth(1,i) + nlayers ), r_um )
+
+        environ_fullhtp1_real( i, 1, nlayers+1, m ) =                          &
+          exner_rho_top + ( 2.0_r_um * ( exner_theta_top - exner_rho_top ) )
+
+      end do
+
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_fullhtp1_real(i)
+        'Missing required UKCA environment field: ', env_names_fullhtp1_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
+
+
   ! Drivers in boundary layer levels group (1D fields)
 
-  n_fields = size(env_names_bllev_real)
-  allocate(environ_bllev_real( bl_levels, n_fields ))
-  environ_bllev_real = 0.0_r_um
+  m_fields = size(env_names_bllev_real)
+  allocate( environ_bllev_real( seg_len, 1, bl_levels, m_fields ) )
+  environ_bllev_real(:,:,:,:) = 0.0_r_um
 
-  do i = 1, n_fields
-    select case(env_names_bllev_real(i))
+  do m = 1, m_fields
+    select case(env_names_bllev_real(m))
 
     case(fldname_rhokh_rdz)
       ! Mixing coefficient: eddy diffusivity * rho / dz
-      do k = 2, bl_levels
-        environ_bllev_real( k, i ) = real( rhokh_bl( map_w3(1) + k - 1 ) *     &
-                                           rdz_tq_bl( map_w3(1) + k - 1 ), r_um)
+      do i = 1, seg_len
+        do k = 2, bl_levels
+          environ_bllev_real( i, 1, k, m ) =                                   &
+            real( rhokh_bl(  map_w3(1,i) + k - 1 ) *                           &
+                  rdz_tq_bl( map_w3(1,i) + k - 1 ), r_um)
+        end do
       end do
+
     case(fldname_dtrdz)
       ! dt / (rho * r * r * dz) for scalar flux divergence
-      environ_bllev_real( :, i ) =                                             &
-        real( dtrdz_tq_bl( map_wth(1) + 1 : map_wth(1) + bl_levels ), r_um )
+      do i = 1, seg_len
+        do k = 1, bl_levels
+          environ_bllev_real( i, 1, k, m ) =                                   &
+            real( dtrdz_tq_bl( map_wth(1,i) + k ), r_um )
+        end do
+      end do
+
     case(fldname_bl_tke)
       ! Turbulent kinetic energy
-      environ_bllev_real( 1 : bl_levels - 1, i ) =                             &
-        real( tke_bl( map_wth(1) + 1 : map_wth(1) + bl_levels - 1 ), r_um )
+      do i = 1, seg_len
+        do k = 1, bl_levels - 1
+          environ_bllev_real( i, 1, k, m ) =                                   &
+            real( tke_bl( map_wth(1,i) + k ), r_um )
+        end do
+      end do
+
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_bllev_real(i)
+        'Missing required UKCA environment field: ', env_names_bllev_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! Drivers in entrainment layers group (1D fields)
 
-  n_fields = size(env_names_entlev_real)
-  allocate(environ_entlev_real( nlev_ent_tr_mix, n_fields ))
-  environ_entlev_real = 0.0_r_um
+  m_fields = size(env_names_entlev_real)
+  allocate(environ_entlev_real( seg_len, 1, nlev_ent_tr_mix, m_fields ))
+  environ_entlev_real(:,:,:,:) = 0.0_r_um
 
-  do i = 1, n_fields
-    select case(env_names_entlev_real(i))
+  do m = 1, m_fields
+    select case(env_names_entlev_real(m))
     case(fldname_we_lim)
       ! rho * entrainment rate at surface mixed layer inversion
-      environ_entlev_real( :, i ) =                                            &
-        real( ent_we_lim( map_ent(1) + 0 : map_ent(1) + nlev_ent_tr_mix - 1 ), &
-              r_um )
+      do i = 1, seg_len
+        do k = 1, nlev_ent_tr_mix
+          environ_entlev_real( i, 1, k, m ) =                                  &
+            real( ent_we_lim( map_ent(1,i) + k - 1 ), r_um )
+        end do
+      end do
+
     case(fldname_t_frac)
       ! Fraction of time surface mixed layer inversion is above level
-      environ_entlev_real( :, i ) =                                            &
-        real( ent_t_frac( map_ent(1) + 0 : map_ent(1) + nlev_ent_tr_mix - 1 ), &
-              r_um )
+      do i = 1, seg_len
+        do k = 1, nlev_ent_tr_mix
+          environ_entlev_real( i, 1, k, m ) =                                  &
+            real( ent_t_frac( map_ent(1,i) + k - 1 ), r_um )
+        end do
+      end do
+
     case(fldname_zrzi)
       ! Level height as fraction of surface mixed layer inversion height above
       ! ML base
-      environ_entlev_real( :, i ) =                                            &
-        real( ent_zrzi( map_ent(1) + 0 : map_ent(1) + nlev_ent_tr_mix - 1 ),   &
-              r_um )
+      do i = 1, seg_len
+        do k = 1, nlev_ent_tr_mix
+          environ_entlev_real( i, 1, k, m ) =                                  &
+            real( ent_zrzi( map_ent(1,i) + k - 1 ), r_um )
+        end do
+      end do
+
     case(fldname_we_lim_dsc)
       ! rho * entrainment rate at decoupled stratocumulus inversion
-      environ_entlev_real( :, i ) = real(                                      &
-        ent_we_lim_dsc( map_ent(1) + 0 : map_ent(1) + nlev_ent_tr_mix - 1 ),   &
-        r_um )
+      do i = 1, seg_len
+        do k = 1, nlev_ent_tr_mix
+          environ_entlev_real( i, 1, k, m ) =                                  &
+            real( ent_we_lim_dsc( map_ent(1,i) + k - 1 ), r_um )
+        end do
+      end do
+
     case(fldname_t_frac_dsc)
       ! Fraction of time decoupled stratocumulus inversion is above level
-      environ_entlev_real( :, i ) = real(                                      &
-        ent_t_frac_dsc( map_ent(1) + 0 : map_ent(1) + nlev_ent_tr_mix - 1 ),   &
-        r_um )
+      do i = 1, seg_len
+        do k = 1, nlev_ent_tr_mix
+          environ_entlev_real( i, 1, k, m ) =                                  &
+            real( ent_t_frac_dsc( map_ent(1,i) + k - 1 ), r_um )
+        end do
+      end do
+
     case(fldname_zrzi_dsc)
       ! Level height as fraction of decoupled stratocumulus inversion height
       ! above DSC ML base
-      environ_entlev_real( :, i ) = real(                                      &
-        ent_zrzi_dsc( map_ent(1) + 0 : map_ent(1) + nlev_ent_tr_mix - 1 ),     &
-        r_um )
+      do i = 1, seg_len
+        do k = 1, nlev_ent_tr_mix
+          environ_entlev_real( i, 1, k, m ) =                                  &
+            real( ent_zrzi_dsc( map_ent(1,i) + k - 1 ), r_um )
+        end do
+      end do
+
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA environment field: ', env_names_entlev_real(i)
+        'Missing required UKCA environment field: ', env_names_entlev_real(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
   ! Drivers in land point group (1D fields)
 
-  n_fields = size(env_names_land_real)
-  allocate(environ_land_real( n_land_pts, n_fields ))
-  environ_land_real = 0.0_r_um
+  m_fields = size(env_names_land_real)
+  allocate(environ_land_real( n_land_pts, m_fields ))
+  environ_land_real(:,:) = 0.0_r_um
 
-  if (l_land) then
-    do i = 1, n_fields
-      select case(env_names_land_real(i))
+  if (l_land_any) then
+    do m = 1, m_fields
+      select case( env_names_land_real( m ) )
       case(fldname_frac_land)
         ! Land_fraction
-        environ_land_real( 1, i ) = frac_land
+        do i = 1, n_land_pts
+          environ_land_real( i, m ) =  frac_land( ainfo%land_index( i ) )
+        end do
       case(fldname_soil_moisture_layer1)
         ! Soil moisture content of top layer
-        environ_land_real( 1, i ) = real( soil_moisture(map_soil(1)) + 0, r_um )
+        do i = 1, n_land_pts
+          environ_land_real( i, m ) =                                          &
+            real( soil_moisture( map_soil(1, ainfo%land_index( i ) ) ), r_um )
+        end do
       case default
         write( log_scratch_space, '(A,A)' )                                    &
-          'Missing required UKCA environment field: ', env_names_land_real(i)
+          'Missing required UKCA environment field: ', env_names_land_real(m)
         call log_event( log_scratch_space, LOG_LEVEL_ERROR )
       end select
     end do
@@ -2590,54 +3597,84 @@ subroutine aerosol_ukca_code( nlayers,                                         &
 
   ! Drivers in land-point tile groups (2D fields)
 
-  n_fields = size(env_names_landtile_real)
-  allocate(environ_landtile_real( n_land_pts, n_land_tile, n_fields ))
-  environ_landtile_real = 0.0_r_um
+  m_fields = size(env_names_landtile_real)
+  allocate(environ_landtile_real( n_land_pts, n_land_tile, m_fields ))
+  environ_landtile_real(:,:,:) = 0.0_r_um
 
-  if (l_land) then
-    do i = 1, n_fields
-      select case(env_names_landtile_real(i))
+  if (l_land_any) then
+    do m = 1, m_fields
+      select case(env_names_landtile_real(m))
       case(fldname_frac_surft)
-        do j = 1, n_land_tile
-          environ_landtile_real( 1, j, i ) = frac_surft( 1, j )
+        do i = 1, n_land_pts
+          do j = 1, n_land_tile
+            environ_landtile_real( i, j, m ) = ainfo%frac_surft( i, j )
+          end do
         end do
       case(fldname_tstar_surft)
-        do j = 1, n_land_tile
-          environ_landtile_real( 1, j, i ) =                                   &
-            real( tile_temperature( map_tile(1) + j - 1 ), r_um )
+        do i = 1, n_land_pts
+          do j = 1, n_land_tile
+            environ_landtile_real( i, j, m ) =                                 &
+              real( tile_temperature( map_tile(1, ainfo%land_index(i) ) +      &
+                                      j - 1 ),                                 &
+                    r_um )
+          end do
         end do
       case(fldname_z0_surft)
-        do j = 1, n_land_tile
-          environ_landtile_real( 1, j, i ) = z0_surft( 1, j )
+        do i = 1, n_land_pts
+          do j = 1, n_land_tile
+            environ_landtile_real( i, j, m ) = z0_surft( i, j )
+          end do
         end do
       case default
         write( log_scratch_space, '(A,A)' )                                    &
           'Missing required UKCA environment field: ',                         &
-          env_names_landtile_real(i)
+          env_names_landtile_real(m)
         call log_event( log_scratch_space, LOG_LEVEL_ERROR )
       end select
     end do
   endif
 
-  n_fields = size(env_names_landtile_logical)
-  allocate(environ_landtile_logical( n_land_pts, n_land_tile, n_fields) )
+  m_fields = size(env_names_landtile_logical)
+  allocate(environ_landtile_logical( n_land_pts, n_land_tile, m_fields) )
   environ_landtile_logical = .false.
 
-  if (l_land) then
-    do i = 1, n_fields
-      select case(env_names_landtile_logical(i))
+  if (l_land_any) then
+    do m = 1, m_fields
+      select case(env_names_landtile_logical(m))
+      ! Note for future developers
+      !   this is the reverse indexing of call tilepts()
       case(fldname_l_active_surft)
-        l_tile_active( 1, : ) = .false.
+
+        ! Initialise to false for land points
         do j = 1, n_land_tile
-          do k = 1, ainfo%surft_pts(j)   ! i.e 0 or 1 times
-            l_tile_active( 1, j ) = .true.
+          do i = 1, n_land_pts
+            l_tile_active( i, j ) = .false.
           end do
-          environ_landtile_logical( 1, j, i ) = l_tile_active( 1, j )
         end do
+
+        ! Loop over all tiles
+        do j = 1, n_land_tile
+
+          ! Obtain land point indices for this tile
+          do i = 1, ainfo%surft_pts(j)
+            k = ainfo%surft_index( i, j )
+
+            ! Tile is active at this land point
+            l_tile_active( k, j ) = .true.
+
+          end do
+        end do
+
+        do j = 1, n_land_tile
+          do i = 1, n_land_pts
+            environ_landtile_logical( i, j, m ) = l_tile_active( i, j )
+          end do
+        end do
+
       case default
         write( log_scratch_space, '(A,A)' )                                    &
           'Missing required UKCA environment field: ',                         &
-          env_names_landtile_logical(i)
+          env_names_landtile_logical(m)
         call log_event( log_scratch_space, LOG_LEVEL_ERROR )
       end select
     end do
@@ -2648,26 +3685,30 @@ subroutine aerosol_ukca_code( nlayers,                                         &
 
   ! Drivers in land-point plant functional type tile group (2D fields)
 
-  n_fields = size(env_names_landpft_real)
-  allocate(environ_landpft_real( n_land_pts, npft, n_fields ))
-  environ_landpft_real = 0.0_r_um
+  m_fields = size(env_names_landpft_real)
+  allocate(environ_landpft_real( n_land_pts, npft, m_fields ))
+  environ_landpft_real(:,:,:) = 0.0_r_um
 
-  if (l_land) then
-    do i = 1, n_fields
-      select case(env_names_landpft_real(i))
+  if (l_land_any) then
+    do m = 1, m_fields
+      select case(env_names_landpft_real(m))
       case(fldname_lai_pft)
         ! Leaf area index
         do j = 1, npft
-          environ_landpft_real( 1, j, i ) = lai_pft( 1, j )
+          do i = 1, n_land_pts
+            environ_landpft_real( i, j, m ) = lai_pft( i, j )
+          end do
         end do
       case(fldname_canht_pft)
         ! Canopy height
         do j = 1, npft
-          environ_landpft_real( 1, j, i ) = canht_pft( 1, j )
+          do i = 1, n_land_pts
+            environ_landpft_real( i, j, m ) = canht_pft( i, j )
+          end do
         end do
       case default
         write( log_scratch_space, '(A,A)' )                                    &
-          'Missing required UKCA environment field: ', env_names_landpft_real(i)
+          'Missing required UKCA environment field: ', env_names_landpft_real(m)
         call log_event( log_scratch_space, LOG_LEVEL_ERROR )
       end select
     end do
@@ -2675,88 +3716,150 @@ subroutine aerosol_ukca_code( nlayers,                                         &
 
   ! Emissions in flat group
 
-  n_fields = size(emiss_names_flat)
-  allocate(emissions_flat( n_fields ))
-  emissions_flat = 0.0_r_um
+  m_fields = size(emiss_names_flat)
+  allocate( emissions_flat( seg_len, 1, m_fields ) )
+  emissions_flat(:,:,:) = 0.0_r_um
 
-  do i = 1, size(emiss_names_flat)
-    select case(emiss_names_flat(i))
+  do m = 1, size(emiss_names_flat)
+    select case(emiss_names_flat(m))
     case('emissions_C2H6')
-      emissions_flat(i) = real( emiss_c2h6(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_c2h6(map_2d(1,i)), r_um )
+      end do
     case('emissions_C3H8')
-      emissions_flat(i) = real( emiss_c3h8(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_c3h8(map_2d(1,i)), r_um )
+      end do
     case('emissions_C5H8')
-      emissions_flat(i) = real( emiss_c5h8(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_c5h8(map_2d(1,i)), r_um )
+      end do
     case('emissions_CH4')
-      emissions_flat(i) = real( emiss_ch4(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_ch4(map_2d(1,i)), r_um )
+      end do
     case('emissions_CO')
-      emissions_flat(i) = real( emiss_co(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_co(map_2d(1,i)), r_um )
+      end do
     case('emissions_HCHO')
-      emissions_flat(i) = real( emiss_hcho(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_hcho(map_2d(1,i)), r_um )
+      end do
     case('emissions_Me2CO')
-      emissions_flat(i) = real( emiss_me2co(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_me2co(map_2d(1,i)), r_um )
+      end do
     case('emissions_MeCHO')
-      emissions_flat(i) = real( emiss_mecho(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_mecho(map_2d(1,i)), r_um )
+      end do
     case('emissions_MeOH')
-      emissions_flat(i) = real( emiss_meoh(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_meoh(map_2d(1,i)), r_um )
+      end do
     case('emissions_NH3')
-      emissions_flat(i) = real( emiss_nh3(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_nh3(map_2d(1,i)), r_um )
+      end do
     case('emissions_NO')
-      emissions_flat(i) = real( emiss_no(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_no(map_2d(1,i)), r_um )
+      end do
     case('emissions_BC_biofuel')
-      emissions_flat(i) = real( emiss_bc_biofuel(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_bc_biofuel(map_2d(1,i)), r_um )
+      end do
     case('emissions_BC_fossil')
-      emissions_flat(i) = real( emiss_bc_fossil(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_bc_fossil(map_2d(1,i)), r_um )
+      end do
     case('emissions_BC_biomass_high')
-      emissions_flat(i) = real( emiss_bc_biomass_high(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_bc_biomass_high(map_2d(1,i)), r_um )
+      end do
     case('emissions_BC_biomass_low')
-      emissions_flat(i) = real( emiss_bc_biomass_low(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_bc_biomass_low(map_2d(1,i)), r_um )
+      end do
     case('emissions_DMS')
-      emissions_flat(i) = real( emiss_dms_land(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_dms_land(map_2d(1,i)), r_um )
+      end do
     case('emissions_Monoterp')
-      emissions_flat(i) = real( emiss_monoterp(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_monoterp(map_2d(1,i)), r_um )
+      end do
     case('emissions_OM_biofuel')
-      emissions_flat(i) = real( emiss_om_biofuel(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_om_biofuel(map_2d(1,i)), r_um )
+      end do
     case('emissions_OM_biomass_high')
-      emissions_flat(i) = real( emiss_om_biomass_high(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_om_biomass_high(map_2d(1,i)), r_um )
+      end do
     case('emissions_OM_biomass_low')
-      emissions_flat(i) = real( emiss_om_biomass_low(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_om_biomass_low(map_2d(1,i)), r_um )
+      end do
     case('emissions_OM_fossil')
-      emissions_flat(i) = real( emiss_om_fossil(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_om_fossil(map_2d(1,i)), r_um )
+      end do
     case('emissions_SO2_high')
-      emissions_flat(i) = real( emiss_so2_high(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_so2_high(map_2d(1,i)), r_um )
+      end do
     case('emissions_SO2_low')
-      emissions_flat(i) = real( emiss_so2_low(map_2d(1)), r_um )
+      do i = 1, seg_len
+        emissions_flat(i,1,m) = real( emiss_so2_low(map_2d(1,i)), r_um )
+      end do
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA emission field: ', emiss_names_flat(i)
+        'Missing required UKCA emission field: ', emiss_names_flat(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
 
-  n_fields = size(emiss_names_fullht)
-  allocate(emissions_fullht( nlayers, n_fields ))
-  emissions_fullht = 0.0_r_um
+  m_fields = size(emiss_names_fullht)
+  allocate( emissions_fullht( seg_len, 1, nlayers, m_fields ) )
+  emissions_fullht(:,:,:,:) = 0.0_r_um
 
   ! Emissions in full height group
 
-  do i = 1, size(emiss_names_fullht)
-    select case(emiss_names_fullht(i))
+  do m = 1, size(emiss_names_fullht)
+    select case(emiss_names_fullht(m))
     case('emissions_NO_aircrft')
-      emissions_fullht( :, i ) =                                               &
-        real( emiss_no_aircrft( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          emissions_fullht( i, 1, k, m ) =                                     &
+            real( emiss_no_aircrft( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case('emissions_BC_biomass')
-      emissions_fullht( :, i ) =                                               &
-        real( emiss_bc_biomass( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          emissions_fullht( i, 1, k, m ) =                                     &
+            real( emiss_bc_biomass( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case('emissions_OM_biomass')
-      emissions_fullht( :, i ) =                                               &
-        real( emiss_om_biomass( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          emissions_fullht( i, 1, k, m ) =                                     &
+            real( emiss_om_biomass( map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case('emissions_SO2_nat')
-      emissions_fullht( :, i ) =                                               &
-        real( emiss_so2_nat( map_wth(1) + 1 : map_wth(1) + nlayers ), r_um )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          emissions_fullht( i, 1, k, m ) =                                     &
+            real( emiss_so2_nat(    map_wth(1,i) + k ), r_um )
+        end do
+      end do
     case default
       write( log_scratch_space, '(A,A)' )                                      &
-        'Missing required UKCA emission field: ', emiss_names_fullht(i)
+        'Missing required UKCA emission field: ', emiss_names_fullht(m)
       call log_event( log_scratch_space, LOG_LEVEL_ERROR )
     end select
   end do
@@ -2781,25 +3884,40 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   previous_time(6) = int( previous_time_second, i_um )
   previous_time(7) = int( previous_time_daynum, i_um )
 
-  call ukca_step_control( int( timestep_number, i_um ), current_time,          &
-                          tracer, ntp, r_theta_levels, r_rho_levels,           &
-                          error_code, previous_time=previous_time,             &
+  call ukca_step_control( int( timestep_number, i_um ),                        &
+                          current_time,                                        &
+                          tracer,                                              &
+                          ntp,                                                 &
+                          r_theta_levels,                                      &
+                          r_rho_levels,                                        &
+                          error_code,                                          &
+                          ! Optional input arguments
+                          ! 1d
+                          previous_time=previous_time,                         &
                           envgroup_scalar_real=environ_scalar_real,            &
+                          ! 2d
+                          envgroup_land_real=environ_land_real,                &
+                          ! 3d
                           envgroup_flat_integer=environ_flat_integer,          &
+                          envgroup_landtile_real=environ_landtile_real,        &
+                          envgroup_landpft_real=environ_landpft_real,          &
                           envgroup_flat_real=environ_flat_real,                &
+                          emissions_flat=emissions_flat,                       &
+                          envgroup_landtile_logical=environ_landtile_logical,  &
                           envgroup_flat_logical=environ_flat_logical,          &
+                          ! 4d
                           envgroup_flatpft_real=environ_flatpft_real,          &
                           envgroup_fullht_real=environ_fullht_real,            &
                           envgroup_fullht0_real=environ_fullht0_real,          &
                           envgroup_fullhtp1_real=environ_fullhtp1_real,        &
                           envgroup_bllev_real=environ_bllev_real,              &
                           envgroup_entlev_real=environ_entlev_real,            &
-                          envgroup_land_real=environ_land_real,                &
-                          envgroup_landtile_real=environ_landtile_real,        &
-                          envgroup_landtile_logical=environ_landtile_logical,  &
-                          envgroup_landpft_real=environ_landpft_real,          &
-                          emissions_flat=emissions_flat,                       &
                           emissions_fullht=emissions_fullht,                   &
+                          ! 5d
+                          !
+                          ! Optional in out arguments
+                          !
+                          ! Optional output arguments
                           error_message=ukca_errmsg,                           &
                           error_routine=ukca_errproc )
 
@@ -2835,663 +3953,1447 @@ subroutine aerosol_ukca_code( nlayers,                                         &
 
   ! Tracers
 
-  do i = 1, size(tracer_names)
-    select case(tracer_names(i))
+  do m = 1, size(tracer_names)
+    select case(tracer_names(m))
     case(fldname_o3p)
-      o3p( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      o3p( map_wth(1) + 0 ) = o3p( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          o3p( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        o3p( map_wth(1,i) + 0 ) = o3p( map_wth(1,i) + 1 )
+      end do
     case(fldname_o3)
-      o3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                            &
-        real( tracer( :, i ), r_def )
-      o3( map_wth(1) + 0 ) = o3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          o3( map_wth(1,i) + k ) =                                             &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        o3( map_wth(1,i) + 0 ) = o3( map_wth(1,i) + 1 )
+      end do
     case(fldname_n)
-      n( map_wth(1) + 1 : map_wth(1) + nlayers ) =                             &
-        real( tracer( :, i ), r_def )
-      n( map_wth(1) + 0 ) = n( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n( map_wth(1,i) + k ) =                                              &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n( map_wth(1,i) + 0 ) = n( map_wth(1,i) + 1 )
+      end do
     case(fldname_no)
-      no( map_wth(1) + 1 : map_wth(1) + nlayers ) =                            &
-        real( tracer( :, i ), r_def )
-      no( map_wth(1) + 0 ) = no( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          no( map_wth(1,i) + k ) =                                             &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        no( map_wth(1,i) + 0 ) = no( map_wth(1,i) + 1 )
+      end do
     case(fldname_no3)
-      no3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      no3( map_wth(1) + 0 ) = no3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          no3( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        no3( map_wth(1,i) + 0 ) = no3( map_wth(1,i) + 1 )
+      end do
     case(fldname_lumped_n)
-      lumped_n( map_wth(1) + 1 : map_wth(1) + nlayers ) =                      &
-        real( tracer( :, i ), r_def )
-      lumped_n( map_wth(1) + 0 ) = lumped_n( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          lumped_n( map_wth(1,i) + k ) =                                       &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        lumped_n( map_wth(1,i) + 0 ) = lumped_n( map_wth(1,i) + 1 )
+      end do
     case(fldname_n2o5)
-      n2o5( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      n2o5( map_wth(1) + 0 ) = n2o5( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n2o5( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n2o5( map_wth(1,i) + 0 ) = n2o5( map_wth(1,i) + 1 )
+      end do
     case(fldname_ho2no2)
-      ho2no2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      ho2no2( map_wth(1) + 0 ) = ho2no2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ho2no2( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ho2no2( map_wth(1,i) + 0 ) = ho2no2( map_wth(1,i) + 1 )
+      end do
     case(fldname_hono2)
-      hono2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      hono2( map_wth(1) + 0 ) = hono2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hono2( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hono2( map_wth(1,i) + 0 ) = hono2( map_wth(1,i) + 1 )
+      end do
     case(fldname_h2o2)
-      h2o2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      h2o2( map_wth(1) + 0 ) = h2o2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          h2o2( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        h2o2( map_wth(1,i) + 0 ) = h2o2( map_wth(1,i) + 1 )
+      end do
     case(fldname_ch4)
-      ch4( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      ch4( map_wth(1) + 0 ) = ch4( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ch4( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ch4( map_wth(1,i) + 0 ) = ch4( map_wth(1,i) + 1 )
+      end do
     case(fldname_co)
-      co( map_wth(1) + 1 : map_wth(1) + nlayers ) =                            &
-        real( tracer( :, i ), r_def )
-      co( map_wth(1) + 0 ) = co( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          co( map_wth(1,i) + k ) =                                             &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        co( map_wth(1,i) + 0 ) = co( map_wth(1,i) + 1 )
+      end do
     case(fldname_hcho)
-      hcho( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      hcho( map_wth(1) + 0 ) = hcho( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hcho( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hcho( map_wth(1,i) + 0 ) = hcho( map_wth(1,i) + 1 )
+      end do
     case(fldname_meoo)
-      meoo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      meoo( map_wth(1) + 0 ) = meoo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meoo( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        meoo( map_wth(1,i) + 0 ) = meoo( map_wth(1,i) + 1 )
+      end do
     case(fldname_meooh)
-      meooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      meooh( map_wth(1) + 0 ) = meooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meooh( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        meooh( map_wth(1,i) + 0 ) = meooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_h)
-      h( map_wth(1) + 1 : map_wth(1) + nlayers ) =                             &
-        real( tracer( :, i ), r_def )
-      h( map_wth(1) + 0 ) = h( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          h( map_wth(1,i) + k ) =                                              &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        h( map_wth(1,i) + 0 ) = h( map_wth(1,i) + 1 )
+      end do
     case(fldname_ch2o)
       ! DO nothing - UKCA water tracer not directly fed back to Q/m_v_n
     case(fldname_oh)
-      oh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                            &
-        real( tracer( :, i ), r_def )
-      oh( map_wth(1) + 0 ) = oh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          oh( map_wth(1,i) + k ) =                                             &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        oh( map_wth(1,i) + 0 ) = oh( map_wth(1,i) + 1 )
+      end do
     case(fldname_ho2)
-      ho2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      ho2( map_wth(1) + 0 ) = ho2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ho2( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ho2( map_wth(1,i) + 0 ) = ho2( map_wth(1,i) + 1 )
+      end do
     case(fldname_cl)
-      cl( map_wth(1) + 1 : map_wth(1) + nlayers ) =                            &
-        real( tracer( :, i ), r_def )
-      cl( map_wth(1) + 0 ) = cl( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cl( map_wth(1,i) + k ) =                                             &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cl( map_wth(1,i) + 0 ) = cl( map_wth(1,i) + 1 )
+      end do
     case(fldname_cl2o2)
-      cl2o2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      cl2o2( map_wth(1) + 0 ) = cl2o2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cl2o2( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cl2o2( map_wth(1,i) + 0 ) = cl2o2( map_wth(1,i) + 1 )
+      end do
     case(fldname_clo)
-      clo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      clo( map_wth(1) + 0 ) = clo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          clo( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        clo( map_wth(1,i) + 0 ) = clo( map_wth(1,i) + 1 )
+      end do
     case(fldname_oclo)
-      oclo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      oclo( map_wth(1) + 0 ) = oclo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          oclo( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        oclo( map_wth(1,i) + 0 ) = oclo( map_wth(1,i) + 1 )
+      end do
     case(fldname_br)
-      br( map_wth(1) + 1 : map_wth(1) + nlayers ) =                            &
-        real( tracer( :, i ), r_def )
-      br( map_wth(1) + 0 ) = br( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          br( map_wth(1,i) + k ) =                                             &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        br( map_wth(1,i) + 0 ) = br( map_wth(1,i) + 1 )
+      end do
     case(fldname_lumped_br)
-      lumped_br( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      lumped_br( map_wth(1) + 0 ) = lumped_br( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          lumped_br( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        lumped_br( map_wth(1,i) + 0 ) = lumped_br( map_wth(1,i) + 1 )
+      end do
     case(fldname_brcl)
-      brcl( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      brcl( map_wth(1) + 0 ) = brcl( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          brcl( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        brcl( map_wth(1,i) + 0 ) = brcl( map_wth(1,i) + 1 )
+      end do
     case(fldname_brono2)
-      brono2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      brono2( map_wth(1) + 0 ) = brono2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          brono2( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        brono2( map_wth(1,i) + 0 ) = brono2( map_wth(1,i) + 1 )
+      end do
     case(fldname_n2o)
-      n2o( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      n2o( map_wth(1) + 0 ) = n2o( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n2o( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n2o( map_wth(1,i) + 0 ) = n2o( map_wth(1,i) + 1 )
+      end do
     case(fldname_lumped_cl)
-      lumped_cl( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      lumped_cl( map_wth(1) + 0 ) = lumped_cl( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          lumped_cl( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        lumped_cl( map_wth(1,i) + 0 ) = lumped_cl( map_wth(1,i) + 1 )
+      end do
     case(fldname_hocl)
-      hocl( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      hocl( map_wth(1) + 0 ) = hocl( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hocl( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hocl( map_wth(1,i) + 0 ) = hocl( map_wth(1,i) + 1 )
+      end do
     case(fldname_hbr)
-      hbr( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      hbr( map_wth(1) + 0 ) = hbr( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hbr( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hbr( map_wth(1,i) + 0 ) = hbr( map_wth(1,i) + 1 )
+      end do
     case(fldname_hobr)
-      hobr( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      hobr( map_wth(1) + 0 ) = hobr( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hobr( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hobr( map_wth(1,i) + 0 ) = hobr( map_wth(1,i) + 1 )
+      end do
     case(fldname_clono2)
-      clono2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      clono2( map_wth(1) + 0 ) = clono2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          clono2( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        clono2( map_wth(1,i) + 0 ) = clono2( map_wth(1,i) + 1 )
+      end do
     case(fldname_cfcl3)
-      cfcl3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      cfcl3( map_wth(1) + 0 ) = cfcl3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cfcl3( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cfcl3( map_wth(1,i) + 0 ) = cfcl3( map_wth(1,i) + 1 )
+      end do
     case(fldname_cf2cl2)
-      cf2cl2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      cf2cl2( map_wth(1) + 0 ) = cf2cl2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cf2cl2( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cf2cl2( map_wth(1,i) + 0 ) = cf2cl2( map_wth(1,i) + 1 )
+      end do
     case(fldname_mebr)
-      mebr( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      mebr( map_wth(1) + 0 ) = mebr( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          mebr( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        mebr( map_wth(1,i) + 0 ) = mebr( map_wth(1,i) + 1 )
+      end do
     case(fldname_hono)
-      hono( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      hono( map_wth(1) + 0 ) = hono( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hono( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hono( map_wth(1,i) + 0 ) = hono( map_wth(1,i) + 1 )
+      end do
     case(fldname_c2h6)
-      c2h6( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      c2h6( map_wth(1) + 0 ) = c2h6( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          c2h6( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        c2h6( map_wth(1,i) + 0 ) = c2h6( map_wth(1,i) + 1 )
+      end do
     case(fldname_etoo)
-      etoo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      etoo( map_wth(1) + 0 ) = etoo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          etoo( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        etoo( map_wth(1,i) + 0 ) = etoo( map_wth(1,i) + 1 )
+      end do
     case(fldname_etooh)
-      etooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      etooh( map_wth(1) + 0 ) = etooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          etooh( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        etooh( map_wth(1,i) + 0 ) = etooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_mecho)
-      mecho( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      mecho( map_wth(1) + 0 ) = mecho( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          mecho( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        mecho( map_wth(1,i) + 0 ) = mecho( map_wth(1,i) + 1 )
+      end do
     case(fldname_meco3)
-      meco3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      meco3( map_wth(1) + 0 ) = meco3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meco3( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        meco3( map_wth(1,i) + 0 ) = meco3( map_wth(1,i) + 1 )
+      end do
     case(fldname_pan)
-      pan( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      pan( map_wth(1) + 0 ) = pan( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pan( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        pan( map_wth(1,i) + 0 ) = pan( map_wth(1,i) + 1 )
+      end do
     case(fldname_c3h8)
-      c3h8( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      c3h8( map_wth(1) + 0 ) = c3h8( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          c3h8( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        c3h8( map_wth(1,i) + 0 ) = c3h8( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_proo)
-      n_proo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      n_proo( map_wth(1) + 0 ) = n_proo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_proo( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_proo( map_wth(1,i) + 0 ) = n_proo( map_wth(1,i) + 1 )
+      end do
     case(fldname_i_proo)
-      i_proo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      i_proo( map_wth(1) + 0 ) = i_proo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          i_proo( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        i_proo( map_wth(1,i) + 0 ) = i_proo( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_prooh)
-      n_prooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                       &
-        real( tracer( :, i ), r_def )
-      n_prooh( map_wth(1) + 0 ) = n_prooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_prooh( map_wth(1,i) + k ) =                                        &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_prooh( map_wth(1,i) + 0 ) = n_prooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_i_prooh)
-      i_prooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                       &
-        real( tracer( :, i ), r_def )
-      i_prooh( map_wth(1) + 0 ) = i_prooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          i_prooh( map_wth(1,i) + k ) =                                        &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        i_prooh( map_wth(1,i) + 0 ) = i_prooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_etcho)
-      etcho( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      etcho( map_wth(1) + 0 ) = etcho( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          etcho( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        etcho( map_wth(1,i) + 0 ) = etcho( map_wth(1,i) + 1 )
+      end do
     case(fldname_etco3)
-      etco3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      etco3( map_wth(1) + 0 ) = etco3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          etco3( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        etco3( map_wth(1,i) + 0 ) = etco3( map_wth(1,i) + 1 )
+      end do
     case(fldname_me2co)
-      me2co( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      me2co( map_wth(1) + 0 ) = me2co( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          me2co( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        me2co( map_wth(1,i) + 0 ) = me2co( map_wth(1,i) + 1 )
+      end do
     case(fldname_mecoch2oo)
-      mecoch2oo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      mecoch2oo( map_wth(1) + 0 ) = mecoch2oo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          mecoch2oo( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        mecoch2oo( map_wth(1,i) + 0 ) = mecoch2oo( map_wth(1,i) + 1 )
+      end do
     case(fldname_mecoch2ooh)
-      mecoch2ooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      mecoch2ooh( map_wth(1) + 0 ) = mecoch2ooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          mecoch2ooh( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        mecoch2ooh( map_wth(1,i) + 0 ) = mecoch2ooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_ppan)
-      ppan( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      ppan( map_wth(1) + 0 ) = ppan( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ppan( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ppan( map_wth(1,i) + 0 ) = ppan( map_wth(1,i) + 1 )
+      end do
     case(fldname_meono2)
-      meono2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      meono2( map_wth(1) + 0 ) = meono2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meono2( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        meono2( map_wth(1,i) + 0 ) = meono2( map_wth(1,i) + 1 )
+      end do
     case(fldname_c5h8)
-      c5h8( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      c5h8( map_wth(1) + 0 ) = c5h8( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          c5h8( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        c5h8( map_wth(1,i) + 0 ) = c5h8( map_wth(1,i) + 1 )
+      end do
     case(fldname_iso2)
-      iso2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      iso2( map_wth(1) + 0 ) = iso2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          iso2( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        iso2( map_wth(1,i) + 0 ) = iso2( map_wth(1,i) + 1 )
+      end do
     case(fldname_isooh)
-      isooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      isooh( map_wth(1) + 0 ) = isooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          isooh( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        isooh( map_wth(1,i) + 0 ) = isooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_ison)
-      ison( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      ison( map_wth(1) + 0 ) = ison( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ison( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ison( map_wth(1,i) + 0 ) = ison( map_wth(1,i) + 1 )
+      end do
     case(fldname_macr)
-      macr( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      macr( map_wth(1) + 0 ) = macr( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          macr( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        macr( map_wth(1,i) + 0 ) = macr( map_wth(1,i) + 1 )
+      end do
     case(fldname_macrooh)
-      macrooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                       &
-        real( tracer( :, i ), r_def )
-      macrooh( map_wth(1) + 0 ) = macrooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          macrooh( map_wth(1,i) + k ) =                                        &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        macrooh( map_wth(1,i) + 0 ) = macrooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_macro2)
-      macro2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      macro2( map_wth(1) + 0 ) = macro2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          macro2( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        macro2( map_wth(1,i) + 0 ) = macro2( map_wth(1,i) + 1 )
+      end do
     case(fldname_mpan)
-      mpan( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      mpan( map_wth(1) + 0 ) = mpan( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          mpan( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        mpan( map_wth(1,i) + 0 ) = mpan( map_wth(1,i) + 1 )
+      end do
     case(fldname_hacet)
-      hacet( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      hacet( map_wth(1) + 0 ) = hacet( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hacet( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hacet( map_wth(1,i) + 0 ) = hacet( map_wth(1,i) + 1 )
+      end do
     case(fldname_mgly)
-      mgly( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      mgly( map_wth(1) + 0 ) = mgly( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          mgly( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        mgly( map_wth(1,i) + 0 ) = mgly( map_wth(1,i) + 1 )
+      end do
     case(fldname_nald)
-      nald( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      nald( map_wth(1) + 0 ) = nald( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          nald( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        nald( map_wth(1,i) + 0 ) = nald( map_wth(1,i) + 1 )
+      end do
     case(fldname_hcooh)
-      hcooh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      hcooh( map_wth(1) + 0 ) = hcooh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hcooh( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        hcooh( map_wth(1,i) + 0 ) = hcooh( map_wth(1,i) + 1 )
+      end do
     case(fldname_meco3h)
-      meco3h( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      meco3h( map_wth(1) + 0 ) = meco3h( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meco3h( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        meco3h( map_wth(1,i) + 0 ) = meco3h( map_wth(1,i) + 1 )
+      end do
     case(fldname_meco2h)
-      meco2h( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( tracer( :, i ), r_def )
-      meco2h( map_wth(1) + 0 ) = meco2h( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meco2h( map_wth(1,i) + k ) =                                         &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        meco2h( map_wth(1,i) + 0 ) = meco2h( map_wth(1,i) + 1 )
+      end do
     case(fldname_h2)
-      h2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                            &
-        real( tracer( :, i ), r_def )
-      h2( map_wth(1) + 0 ) = h2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          h2( map_wth(1,i) + k ) =                                             &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        h2( map_wth(1,i) + 0 ) = h2( map_wth(1,i) + 1 )
+      end do
     case(fldname_meoh)
-      meoh( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      meoh( map_wth(1) + 0 ) = meoh( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meoh( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        meoh( map_wth(1,i) + 0 ) = meoh( map_wth(1,i) + 1 )
+      end do
     case(fldname_msa)
-      msa( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      msa( map_wth(1) + 0 ) = msa( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          msa( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        msa( map_wth(1,i) + 0 ) = msa( map_wth(1,i) + 1 )
+      end do
     case(fldname_nh3)
-      nh3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      nh3( map_wth(1) + 0 ) = nh3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          nh3( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        nh3( map_wth(1,i) + 0 ) = nh3( map_wth(1,i) + 1 )
+      end do
     case(fldname_cs2)
-      cs2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      cs2( map_wth(1) + 0 ) = cs2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cs2( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cs2( map_wth(1,i) + 0 ) = cs2( map_wth(1,i) + 1 )
+      end do
     case(fldname_csul)
-      csul( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      csul( map_wth(1) + 0 ) = csul( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          csul( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        csul( map_wth(1,i) + 0 ) = csul( map_wth(1,i) + 1 )
+      end do
     case(fldname_h2s)
-      h2s( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      h2s( map_wth(1) + 0 ) = h2s( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          h2s( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        h2s( map_wth(1,i) + 0 ) = h2s( map_wth(1,i) + 1 )
+      end do
     case(fldname_so3)
-      so3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      so3( map_wth(1) + 0 ) = so3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          so3( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        so3( map_wth(1,i) + 0 ) = so3( map_wth(1,i) + 1 )
+      end do
     case(fldname_passive_o3)
-      passive_o3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      passive_o3( map_wth(1) + 0 ) = passive_o3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          passive_o3( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        passive_o3( map_wth(1,i) + 0 ) = passive_o3( map_wth(1,i) + 1 )
+      end do
     case(fldname_age_of_air)
-      age_of_air( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      age_of_air( map_wth(1) + 0 ) = age_of_air( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          age_of_air( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        age_of_air( map_wth(1,i) + 0 ) = age_of_air( map_wth(1,i) + 1 )
+      end do
     case(fldname_dms)
-      dms( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      dms( map_wth(1) + 0 ) = dms( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          dms( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        dms( map_wth(1,i) + 0 ) = dms( map_wth(1,i) + 1 )
+      end do
     case(fldname_so2)
-      so2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( tracer( :, i ), r_def )
-      so2( map_wth(1) + 0 ) = so2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          so2( map_wth(1,i) + k ) =                                            &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        so2( map_wth(1,i) + 0 ) = so2( map_wth(1,i) + 1 )
+      end do
     case(fldname_h2so4)
-      h2so4( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( tracer( :, i ), r_def )
-      h2so4( map_wth(1) + 0 ) = h2so4( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          h2so4( map_wth(1,i) + k ) =                                          &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        h2so4( map_wth(1,i) + 0 ) = h2so4( map_wth(1,i) + 1 )
+      end do
     case(fldname_dmso)
-      dmso( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( tracer( :, i ), r_def )
-      dmso( map_wth(1) + 0 ) = dmso( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          dmso( map_wth(1,i) + k ) =                                           &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        dmso( map_wth(1,i) + 0 ) = dmso( map_wth(1,i) + 1 )
+      end do
     case(fldname_monoterpene)
-      monoterpene( map_wth(1) + 1 : map_wth(1) + nlayers ) =                   &
-        real( tracer( :, i ), r_def )
-      monoterpene( map_wth(1) + 0 ) = monoterpene( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          monoterpene( map_wth(1,i) + k ) =                                    &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        monoterpene( map_wth(1,i) + 0 ) = monoterpene( map_wth(1,i) + 1 )
+      end do
     case(fldname_secondary_organic)
-      secondary_organic( map_wth(1) + 1 : map_wth(1) + nlayers ) =             &
-        real( tracer( :, i ), r_def )
-      secondary_organic( map_wth(1) + 0 ) = secondary_organic( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          secondary_organic( map_wth(1,i) + k ) =                              &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        secondary_organic( map_wth(1,i) + 0 ) =                                &
+                           secondary_organic( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_nuc_sol)
-      n_nuc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      n_nuc_sol( map_wth(1) + 0 ) = n_nuc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_nuc_sol( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_nuc_sol( map_wth(1,i) + 0 ) = n_nuc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_nuc_sol_su)
-      nuc_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      nuc_sol_su( map_wth(1) + 0 ) = nuc_sol_su( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          nuc_sol_su( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        nuc_sol_su( map_wth(1,i) + 0 ) = nuc_sol_su( map_wth(1,i) + 1 )
+      end do
     case(fldname_nuc_sol_om)
-      nuc_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      nuc_sol_om( map_wth(1) + 0 ) = nuc_sol_om( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          nuc_sol_om( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        nuc_sol_om( map_wth(1,i) + 0 ) = nuc_sol_om( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_ait_sol)
-      n_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      n_ait_sol( map_wth(1) + 0 ) = n_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_ait_sol( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_ait_sol( map_wth(1,i) + 0 ) = n_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_ait_sol_su)
-      ait_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      ait_sol_su( map_wth(1) + 0 ) = ait_sol_su( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ait_sol_su( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ait_sol_su( map_wth(1,i) + 0 ) = ait_sol_su( map_wth(1,i) + 1 )
+      end do
     case(fldname_ait_sol_bc)
-      ait_sol_bc( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      ait_sol_bc( map_wth(1) + 0 ) = ait_sol_bc( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ait_sol_bc( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ait_sol_bc( map_wth(1,i) + 0 ) = ait_sol_bc( map_wth(1,i) + 1 )
+      end do
     case(fldname_ait_sol_om)
-      ait_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      ait_sol_om( map_wth(1) + 0 ) = ait_sol_om( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ait_sol_om( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ait_sol_om( map_wth(1,i) + 0 ) = ait_sol_om( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_acc_sol)
-      n_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      n_acc_sol( map_wth(1) + 0 ) = n_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_acc_sol( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_acc_sol( map_wth(1,i) + 0 ) = n_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_acc_sol_su)
-      acc_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      acc_sol_su( map_wth(1) + 0 ) = acc_sol_su( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          acc_sol_su( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        acc_sol_su( map_wth(1,i) + 0 ) = acc_sol_su( map_wth(1,i) + 1 )
+      end do
     case(fldname_acc_sol_bc)
-      acc_sol_bc( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      acc_sol_bc( map_wth(1) + 0 ) = acc_sol_bc( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          acc_sol_bc( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        acc_sol_bc( map_wth(1,i) + 0 ) = acc_sol_bc( map_wth(1,i) + 1 )
+      end do
     case(fldname_acc_sol_om)
-      acc_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      acc_sol_om( map_wth(1) + 0 ) = acc_sol_om( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          acc_sol_om( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        acc_sol_om( map_wth(1,i) + 0 ) = acc_sol_om( map_wth(1,i) + 1 )
+      end do
     case(fldname_acc_sol_ss)
-      acc_sol_ss( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      acc_sol_ss( map_wth(1) + 0 ) = acc_sol_ss( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          acc_sol_ss( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        acc_sol_ss( map_wth(1,i) + 0 ) = acc_sol_ss( map_wth(1,i) + 1 )
+      end do
     case(fldname_acc_sol_du)
-      acc_sol_du( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      acc_sol_du( map_wth(1) + 0 ) = acc_sol_du( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          acc_sol_du( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        acc_sol_du( map_wth(1,i) + 0 ) = acc_sol_du( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_cor_sol)
-      n_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      n_cor_sol( map_wth(1) + 0 ) = n_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_cor_sol( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_cor_sol( map_wth(1,i) + 0 ) = n_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_cor_sol_su)
-      cor_sol_su( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      cor_sol_su( map_wth(1) + 0 ) = cor_sol_su( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cor_sol_su( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cor_sol_su( map_wth(1,i) + 0 ) = cor_sol_su( map_wth(1,i) + 1 )
+      end do
     case(fldname_cor_sol_bc)
-      cor_sol_bc( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      cor_sol_bc( map_wth(1) + 0 ) = cor_sol_bc( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cor_sol_bc( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cor_sol_bc( map_wth(1,i) + 0 ) = cor_sol_bc( map_wth(1,i) + 1 )
+      end do
     case(fldname_cor_sol_om)
-      cor_sol_om( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      cor_sol_om( map_wth(1) + 0 ) = cor_sol_om( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cor_sol_om( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cor_sol_om( map_wth(1,i) + 0 ) = cor_sol_om( map_wth(1,i) + 1 )
+      end do
     case(fldname_cor_sol_ss)
-      cor_sol_ss( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      cor_sol_ss( map_wth(1) + 0 ) = cor_sol_ss( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cor_sol_ss( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cor_sol_ss( map_wth(1,i) + 0 ) = cor_sol_ss( map_wth(1,i) + 1 )
+      end do
     case(fldname_cor_sol_du)
-      cor_sol_du( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      cor_sol_du( map_wth(1) + 0 ) = cor_sol_du( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cor_sol_du( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cor_sol_du( map_wth(1,i) + 0 ) = cor_sol_du( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_ait_ins)
-      n_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      n_ait_ins( map_wth(1) + 0 ) = n_ait_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_ait_ins( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_ait_ins( map_wth(1,i) + 0 ) = n_ait_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_ait_ins_bc)
-      ait_ins_bc( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      ait_ins_bc( map_wth(1) + 0 ) = ait_ins_bc( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ait_ins_bc( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ait_ins_bc( map_wth(1,i) + 0 ) = ait_ins_bc( map_wth(1,i) + 1 )
+      end do
     case(fldname_ait_ins_om)
-      ait_ins_om( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      ait_ins_om( map_wth(1) + 0 ) = ait_ins_om( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          ait_ins_om( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        ait_ins_om( map_wth(1,i) + 0 ) = ait_ins_om( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_acc_ins)
-      n_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      n_acc_ins( map_wth(1) + 0 ) = n_acc_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_acc_ins( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_acc_ins( map_wth(1,i) + 0 ) = n_acc_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_acc_ins_du)
-      acc_ins_du( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      acc_ins_du( map_wth(1) + 0 ) = acc_ins_du( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          acc_ins_du( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        acc_ins_du( map_wth(1,i) + 0 ) = acc_ins_du( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_cor_ins)
-      n_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( tracer( :, i ), r_def )
-      n_cor_ins( map_wth(1) + 0 ) = n_cor_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_cor_ins( map_wth(1,i) + k ) =                                      &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        n_cor_ins( map_wth(1,i) + 0 ) = n_cor_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_cor_ins_du)
-      cor_ins_du( map_wth(1) + 1 : map_wth(1) + nlayers ) =                    &
-        real( tracer( :, i ), r_def )
-      cor_ins_du( map_wth(1) + 0 ) = cor_ins_du( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cor_ins_du( map_wth(1,i) + k ) =                                     &
+            real( tracer( i, 1, k, m ), r_def )
+        end do
+
+        cor_ins_du( map_wth(1,i) + 0 ) = cor_ins_du( map_wth(1,i) + 1 )
+      end do
     end select
   end do
 
   ! Non-transported prognostics
 
-  do i = 1, size(ntp_names)
-    select case(ntp_names(i))
+  do m = 1, size(ntp_names)
+    select case(ntp_names(m))
     case(fldname_cloud_drop_no_conc)
       ! Impose lower limit on CDNC (5 cm-3)
-      cloud_drop_no_conc( map_wth(1) + 1 : map_wth(1) + nlayers ) =            &
-        real( max( 5.0e6_r_um, ntp( :, i ) ), r_def )
-      cloud_drop_no_conc( map_wth(1) + 0 ) =                                   &
-        cloud_drop_no_conc( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          cloud_drop_no_conc( map_wth(1,i) + k ) =                             &
+                            real( max( 5.0e6_r_um, ntp( i, 1, k, m ) ), r_def )
+        end do
+
+        cloud_drop_no_conc( map_wth(1,i) + 0 ) =                               &
+                                         cloud_drop_no_conc( map_wth(1,i) + 1 )
+      end do
     case(fldname_surfarea)
        ! UKCA output not currently used
     case(fldname_drydp_ait_sol)
-      drydp_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      drydp_ait_sol( map_wth(1) + 0 ) = drydp_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          drydp_ait_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        drydp_ait_sol( map_wth(1,i) + 0 ) = drydp_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_drydp_acc_sol)
-      drydp_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      drydp_acc_sol( map_wth(1) + 0 ) = drydp_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          drydp_acc_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        drydp_acc_sol( map_wth(1,i) + 0 ) = drydp_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_drydp_cor_sol)
-      drydp_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      drydp_cor_sol( map_wth(1) + 0 ) = drydp_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          drydp_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        drydp_cor_sol( map_wth(1,i) + 0 ) = drydp_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_drydp_ait_ins)
-      drydp_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      drydp_ait_ins( map_wth(1) + 0 ) = drydp_ait_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          drydp_ait_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        drydp_ait_ins( map_wth(1,i) + 0 ) = drydp_ait_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_drydp_acc_ins)
-      drydp_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      drydp_acc_ins( map_wth(1) + 0 ) = drydp_acc_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          drydp_acc_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        drydp_acc_ins( map_wth(1,i) + 0 ) = drydp_acc_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_drydp_cor_ins)
-      drydp_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      drydp_cor_ins( map_wth(1) + 0 ) = drydp_cor_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          drydp_cor_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        drydp_cor_ins( map_wth(1,i) + 0 ) = drydp_cor_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_wetdp_ait_sol)
-      wetdp_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      wetdp_ait_sol( map_wth(1) + 0 ) = wetdp_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          wetdp_ait_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        wetdp_ait_sol( map_wth(1,i) + 0 ) = wetdp_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_wetdp_acc_sol)
-      wetdp_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      wetdp_acc_sol( map_wth(1) + 0 ) = wetdp_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          wetdp_acc_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        wetdp_acc_sol( map_wth(1,i) + 0 ) = wetdp_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_wetdp_cor_sol)
-      wetdp_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      wetdp_cor_sol( map_wth(1) + 0 ) = wetdp_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          wetdp_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        wetdp_cor_sol( map_wth(1,i) + 0 ) = wetdp_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_rhopar_ait_sol)
-      rhopar_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =                &
-        real( ntp( :, i ), r_def )
-      rhopar_ait_sol( map_wth(1) + 0 ) = rhopar_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          rhopar_ait_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        rhopar_ait_sol( map_wth(1,i) + 0 ) = rhopar_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_rhopar_acc_sol)
-      rhopar_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =                &
-        real( ntp( :, i ), r_def )
-      rhopar_acc_sol( map_wth(1) + 0 ) = rhopar_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          rhopar_acc_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        rhopar_acc_sol( map_wth(1,i) + 0 ) = rhopar_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_rhopar_cor_sol)
-      rhopar_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =                &
-        real( ntp( :, i ), r_def )
-      rhopar_cor_sol( map_wth(1) + 0 ) = rhopar_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          rhopar_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        rhopar_cor_sol( map_wth(1,i) + 0 ) = rhopar_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_rhopar_ait_ins)
-      rhopar_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =                &
-        real( ntp( :, i ), r_def )
-      rhopar_ait_ins( map_wth(1) + 0 ) = rhopar_ait_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          rhopar_ait_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        rhopar_ait_ins( map_wth(1,i) + 0 ) = rhopar_ait_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_rhopar_acc_ins)
-      rhopar_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =                &
-        real( ntp( :, i ), r_def )
-      rhopar_acc_ins( map_wth(1) + 0 ) = rhopar_acc_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          rhopar_acc_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        rhopar_acc_ins( map_wth(1,i) + 0 ) = rhopar_acc_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_rhopar_cor_ins)
-      rhopar_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =                &
-        real( ntp( :, i ), r_def )
-      rhopar_cor_ins( map_wth(1) + 0 ) = rhopar_cor_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          rhopar_cor_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        rhopar_cor_ins( map_wth(1,i) + 0 ) = rhopar_cor_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_su_ait_sol)
-      pvol_su_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_su_ait_sol( map_wth(1) + 0 ) = pvol_su_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_su_ait_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_su_ait_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_su_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_bc_ait_sol)
-      pvol_bc_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_bc_ait_sol( map_wth(1) + 0 ) = pvol_bc_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_bc_ait_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_bc_ait_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_bc_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_om_ait_sol)
-      pvol_om_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_om_ait_sol( map_wth(1) + 0 ) = pvol_om_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_om_ait_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_om_ait_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_om_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_wat_ait_sol)
-      pvol_wat_ait_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =              &
-        real( ntp( :, i ), r_def )
-      pvol_wat_ait_sol( map_wth(1) + 0 ) = pvol_wat_ait_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_wat_ait_sol( map_wth(1,i) + k ) =                               &
+                                               real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_wat_ait_sol( map_wth(1,i) + 0 ) =                                 &
+                                         pvol_wat_ait_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_su_acc_sol)
-      pvol_su_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_su_acc_sol( map_wth(1) + 0 ) = pvol_su_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_su_acc_sol( map_wth(1,i) + k ) =                                &
+            real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_su_acc_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_su_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_bc_acc_sol)
-      pvol_bc_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_bc_acc_sol( map_wth(1) + 0 ) = pvol_bc_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_bc_acc_sol( map_wth(1,i) + k ) =                                &
+                                               real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_bc_acc_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_bc_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_om_acc_sol)
-      pvol_om_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_om_acc_sol( map_wth(1) + 0 ) = pvol_om_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_om_acc_sol( map_wth(1,i) + k ) =                                &
+                                               real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_om_acc_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_om_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_ss_acc_sol)
-      pvol_ss_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_ss_acc_sol( map_wth(1) + 0 ) = pvol_ss_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_ss_acc_sol( map_wth(1,i) + k ) =                                &
+                                               real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_ss_acc_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_ss_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_du_acc_sol)
-      pvol_du_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_du_acc_sol( map_wth(1) + 0 ) = pvol_du_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_du_acc_sol( map_wth(1,i) + k ) =                                &
+                                               real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_du_acc_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_du_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_wat_acc_sol)
-      pvol_wat_acc_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =              &
-        real( ntp( :, i ), r_def )
-      pvol_wat_acc_sol( map_wth(1) + 0 ) = pvol_wat_acc_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_wat_acc_sol( map_wth(1,i) + k ) =                               &
+                                               real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_wat_acc_sol( map_wth(1,i) + 0 ) =                                 &
+                                         pvol_wat_acc_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_su_cor_sol)
-      pvol_su_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_su_cor_sol( map_wth(1) + 0 ) = pvol_su_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_su_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_su_cor_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_su_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_bc_cor_sol)
-      pvol_bc_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_bc_cor_sol( map_wth(1) + 0 ) = pvol_bc_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_bc_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_bc_cor_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_bc_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_om_cor_sol)
-      pvol_om_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_om_cor_sol( map_wth(1) + 0 ) = pvol_om_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_om_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_om_cor_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_om_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_ss_cor_sol)
-      pvol_ss_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_ss_cor_sol( map_wth(1) + 0 ) = pvol_ss_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_ss_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_ss_cor_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_ss_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_du_cor_sol)
-      pvol_du_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_du_cor_sol( map_wth(1) + 0 ) = pvol_du_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_du_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_du_cor_sol( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_du_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_wat_cor_sol)
-      pvol_wat_cor_sol( map_wth(1) + 1 : map_wth(1) + nlayers ) =              &
-        real( ntp( :, i ), r_def )
-      pvol_wat_cor_sol( map_wth(1) + 0 ) = pvol_wat_cor_sol( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_wat_cor_sol( map_wth(1,i) + k ) =                               &
+                                               real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_wat_cor_sol( map_wth(1,i) + 0 ) =                                 &
+                                         pvol_wat_cor_sol( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_bc_ait_ins)
-      pvol_bc_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_bc_ait_ins( map_wth(1) + 0 ) = pvol_bc_ait_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_bc_ait_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_bc_ait_ins( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_bc_ait_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_om_ait_ins)
-      pvol_om_ait_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_om_ait_ins( map_wth(1) + 0 ) = pvol_om_ait_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_om_ait_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_om_ait_ins( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_om_ait_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_du_acc_ins)
-      pvol_du_acc_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_du_acc_ins( map_wth(1) + 0 ) = pvol_du_acc_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_du_acc_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_du_acc_ins( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_du_acc_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_pvol_du_cor_ins)
-      pvol_du_cor_ins( map_wth(1) + 1 : map_wth(1) + nlayers ) =               &
-        real( ntp( :, i ), r_def )
-      pvol_du_cor_ins( map_wth(1) + 0 ) = pvol_du_cor_ins( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          pvol_du_cor_ins( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        pvol_du_cor_ins( map_wth(1,i) + 0 ) =                                  &
+                                        pvol_du_cor_ins( map_wth(1,i) + 1 )
+      end do
     case(fldname_no2)
-      no2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( ntp( :, i ), r_def )
-      no2( map_wth(1) + 0 ) = no2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          no2( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        no2( map_wth(1,i) + 0 ) = no2( map_wth(1,i) + 1 )
+      end do
     case(fldname_bro)
-      bro( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( ntp( :, i ), r_def )
-      bro( map_wth(1) + 0 ) = bro( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          bro( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        bro( map_wth(1,i) + 0 ) = bro( map_wth(1,i) + 1 )
+      end do
     case(fldname_hcl)
-      hcl( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( ntp( :, i ), r_def )
-      hcl( map_wth(1) + 0 ) = hcl( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          hcl( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        hcl( map_wth(1,i) + 0 ) = hcl( map_wth(1,i) + 1 )
+      end do
     case(fldname_o1d)
-      o1d( map_wth(1) + 1 : map_wth(1) + nlayers ) =                           &
-        real( ntp( :, i ), r_def )
-      o1d( map_wth(1) + 0 ) = o1d( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          o1d( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        o1d( map_wth(1,i) + 0 ) = o1d( map_wth(1,i) + 1 )
+      end do
      ! These fields are ntp if l_ukca_ro2_ntp=true, else tracers.
     case(fldname_meoo)
-      meoo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( ntp( :, i ), r_def )
-      meoo( map_wth(1) + 0 ) = meoo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meoo( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        meoo( map_wth(1,i) + 0 ) = meoo( map_wth(1,i) + 1 )
+      end do
     case(fldname_etoo)
-      etoo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( ntp( :, i ), r_def )
-      etoo( map_wth(1) + 0 ) = etoo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          etoo( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        etoo( map_wth(1,i) + 0 ) = etoo( map_wth(1,i) + 1 )
+      end do
     case(fldname_meco3)
-      meco3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( ntp( :, i ), r_def )
-      meco3( map_wth(1) + 0 ) = meco3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          meco3( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        meco3( map_wth(1,i) + 0 ) = meco3( map_wth(1,i) + 1 )
+      end do
     case(fldname_n_proo)
-      n_proo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( ntp( :, i ), r_def )
-      n_proo( map_wth(1) + 0 ) = n_proo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          n_proo( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        n_proo( map_wth(1,i) + 0 ) = n_proo( map_wth(1,i) + 1 )
+      end do
     case(fldname_i_proo)
-      i_proo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( ntp( :, i ), r_def )
-      i_proo( map_wth(1) + 0 ) = i_proo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          i_proo( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        i_proo( map_wth(1,i) + 0 ) = i_proo( map_wth(1,i) + 1 )
+      end do
     case(fldname_etco3)
-      etco3( map_wth(1) + 1 : map_wth(1) + nlayers ) =                         &
-        real( ntp( :, i ), r_def )
-      etco3( map_wth(1) + 0 ) = etco3( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          etco3( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        etco3( map_wth(1,i) + 0 ) = etco3( map_wth(1,i) + 1 )
+      end do
     case(fldname_mecoch2oo)
-      mecoch2oo( map_wth(1) + 1 : map_wth(1) + nlayers ) =                     &
-        real( ntp( :, i ), r_def )
-      mecoch2oo( map_wth(1) + 0 ) = mecoch2oo( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          mecoch2oo( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        mecoch2oo( map_wth(1,i) + 0 ) = mecoch2oo( map_wth(1,i) + 1 )
+      end do
     case(fldname_macro2)
-      macro2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                        &
-        real( ntp( :, i ), r_def )
-      macro2( map_wth(1) + 0 ) = macro2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          macro2( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        macro2( map_wth(1,i) + 0 ) = macro2( map_wth(1,i) + 1 )
+      end do
     case(fldname_iso2)
-      iso2( map_wth(1) + 1 : map_wth(1) + nlayers ) =                          &
-        real( ntp( :, i ), r_def )
-      iso2( map_wth(1) + 0 ) = iso2( map_wth(1) + 1 )
+      do i = 1, seg_len
+        do k = 1, nlayers
+          iso2( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
+        end do
+
+        iso2( map_wth(1,i) + 0 ) = iso2( map_wth(1,i) + 1 )
+      end do
     end select
   end do
 
-  deallocate(ntp)
-  deallocate(tracer)
+  deallocate( z0h_bare_surft )
+  deallocate( catch_surft )
+  deallocate( catch_snow_surft )
+  deallocate( z0m_soil_gb )
+  deallocate( l_tile_active )
+  deallocate( canht_pft )
+  deallocate( lai_pft )
+  deallocate( z0_surft )
+  deallocate( ntp )
+  deallocate( tracer )
 
 end subroutine aerosol_ukca_code
 

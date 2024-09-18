@@ -23,7 +23,7 @@ module um_ukca_init_mod
                       log_scratch_space,                                       &
                       LOG_LEVEL_ERROR, LOG_LEVEL_INFO
 
-  use constants_mod, only : r_um, i_um
+  use constants_mod, only : r_um, i_um, i_def
 
   ! LFRic namelists which have been read
   use aerosol_config_mod,        only: glomap_mode,                            &
@@ -38,16 +38,8 @@ module um_ukca_init_mod
                                        chem_scheme_flexchem,                   &
                                        l_ukca_ro2_ntp
 
-  ! UM modules used
-  use nlsizes_namelist_mod, only: bl_levels, row_length, rows, model_levels
-  use timestep_mod,         only: timestep
-  use cv_run_mod,           only: l_param_conv
-
   ! JULES modules used
-  use jules_surface_types_mod, only: ntype, npft,                              &
-                                     brd_leaf, ndl_leaf,                       &
-                                     c3_grass, c4_grass,                       &
-                                     shrub, urban, lake, soil, ice
+
   use jules_soil_mod,          only: dzsoil_io
 
   ! UKCA API module
@@ -495,15 +487,33 @@ module um_ukca_init_mod
 
 contains
 
-  subroutine um_ukca_init()
+  subroutine um_ukca_init(ncells_ukca)
   !> @brief Set up the UKCA model
 
+  use nlsizes_namelist_mod, only: bl_levels, rows, model_levels
+
+  use jules_surface_types_mod, only: ntype, npft,                              &
+                                     brd_leaf, ndl_leaf,                       &
+                                     c3_grass, c4_grass,                       &
+                                     shrub, urban, lake, soil, ice
+
+  ! UM modules used
+
+  use timestep_mod,         only: timestep
+  use cv_run_mod,           only: l_param_conv
+
   implicit none
+
+    integer(i_def), intent(in) :: ncells_ukca
+
+    integer(i_um) :: row_length_ukca
+
+    row_length_ukca = int( ncells_ukca, i_um )
 
     if ( ( aerosol == aerosol_um ) .and.                                       &
          ( glomap_mode == glomap_mode_dust_and_clim ) ) then
 
-        call aerosol_ukca_dust_only_init( row_length, rows, model_levels,      &
+        call aerosol_ukca_dust_only_init( row_length_ukca, rows, model_levels, &
                                           bl_levels, timestep, l_param_conv )
 
     else if ( ( aerosol == aerosol_um .and.                                    &
@@ -512,7 +522,7 @@ contains
                 chem_scheme == chem_scheme_strat_test .or.                     &
                 chem_scheme == chem_scheme_strattrop ) ) then
 
-        call ukca_init( row_length, rows, model_levels, bl_levels,             &
+        call ukca_init( row_length_ukca, rows, model_levels, bl_levels,        &
                         ntype, npft, brd_leaf, ndl_leaf, c3_grass, c4_grass,   &
                         shrub, urban, lake, soil, ice,                         &
                         dzsoil_io(1), timestep, l_param_conv )
@@ -579,17 +589,9 @@ contains
 
     ! Local variables
 
-    integer(i_um) :: emiss_id
-    integer :: n_emissions
     integer :: n
-    integer :: n_previous
     integer :: i
 
-    logical :: l_three_dim
-
-    character(len=ukca_maxlen_emiss_long_name) :: long_name
-
-    character(len=ukca_maxlen_emiss_var_name) :: field_varname
     character(len=*), parameter  :: emiss_units = 'kg m-2 s-1'
 
     ! Local copies of ukca configuration variables to allow setting up chemistry

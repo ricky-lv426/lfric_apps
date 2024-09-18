@@ -245,7 +245,7 @@ contains
   !> multidata dimensions are completely defined when the XIOS
   !> axis dimensions are being synched.
   !> @param[in] model_clock     The clock providing access to time information
-  subroutine basic_initialisations(model_clock)
+  subroutine basic_initialisations(mesh,model_clock)
 
 #ifdef UM_PHYSICS
     use formulation_config_mod,     only: use_physics
@@ -257,13 +257,18 @@ contains
 
     implicit none
 
+    type( mesh_type ), intent(in), pointer :: mesh
     class(model_clock_type), intent(inout) :: model_clock
 
 #ifdef UM_PHYSICS
     integer(i_def) :: ncells
+    integer(i_def) :: ncells_ukca
 
     ! Set derived planet constants and presets
     call set_planet_constants()
+
+    ! Initialise UM to run full field
+    ncells_ukca = mesh%get_last_edge_cell()
 
     ! Initialise UM to run in columns
     ncells = 1_i_def
@@ -276,22 +281,29 @@ contains
       end if
       ! Initialisation of UM high-level variables
       call um_control_init()
+
+      ! Initialisation of UM physics variables
       call um_sizes_init(ncells)
+
       ! Initialisation of UM clock
       call um_clock_init(model_clock)
 
       ! Initialisation of UM physics variables
       call um_physics_init()
+
       ! Read all the radaer lut namelist files
       call um_radaer_lut_init()
+
       ! Initialisation of Jules high-level variables
       call jules_control_init()
+
       if (surface == surface_jules) then
         ! Initialisation of Jules physics variables
         call jules_physics_init()
       end if
+
       ! Initialisation of UKCA physics variables
-      call um_ukca_init()
+      call um_ukca_init(ncells_ukca)
 
     end if
 #endif
@@ -362,10 +374,6 @@ contains
     character(str_def), allocatable :: double_names(:)
 
     character(str_def), allocatable :: meshes_to_check(:)
-
-#ifdef UM_PHYSICS
-    integer(i_def) :: ncells
-#endif
 
     integer :: start_index, end_index
 
@@ -697,7 +705,7 @@ contains
     !=======================================================================
     ! 4.0 Initialise output
     !=======================================================================
-    call basic_initialisations( modeldb%clock )
+    call basic_initialisations( mesh, modeldb%clock )
 
     call log_event("Initialising I/O context", LOG_LEVEL_INFO)
 
