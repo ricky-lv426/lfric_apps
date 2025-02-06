@@ -19,7 +19,6 @@ module coupler_mod
   use pure_abstract_field_mod,        only: pure_abstract_field_type
   use function_space_mod,             only: function_space_type
   use fs_continuity_mod,              only: W3, Wtheta
-  use psykal_lite_mod,                only: invoke_nodal_coordinates_kernel
   use function_space_collection_mod,  only: function_space_collection
   use field_collection_iterator_mod,  only: field_collection_iterator_type
   use field_collection_mod,           only: field_collection_type
