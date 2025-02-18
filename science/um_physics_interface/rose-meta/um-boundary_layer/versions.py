@@ -17,18 +17,6 @@ class UpgradeError(Exception):
     __str__ = __repr__
 
 
-"""
-Copy this template and complete to add your macro
-class vnXX_txxx(MacroUpgrade):
-    # Upgrade macro for <TICKET> by <Author>
-    BEFORE_TAG = "vnX.X"
-    AFTER_TAG = "vnX.X_txxx"
-    def upgrade(self, config, meta_config=None):
-        # Add settings
-        return config, self.reports
-"""
-
-
 class vn20_t334(MacroUpgrade):
     """Upgrade macro for ticket #334 by Ian Boutle."""
 
@@ -38,5 +26,20 @@ class vn20_t334(MacroUpgrade):
     def upgrade(self, config, meta_config=None):
         # Commands From: science/um_physics_interface/rose-meta/um-boundary_layer
         self.add_setting(config, ["namelist:blayer", "dec_thres_cu"], "0.05")
+        return config, self.reports
+
+
+class vn20_t562(MacroUpgrade):
+    """Upgrade macro for ticket #562 by Paul Burns."""
+
+    BEFORE_TAG = "vn2.0_t334"
+    AFTER_TAG = "vn2.0_t562"
+
+    def upgrade(self, config, meta_config=None):
+        # Commands From: rose-meta/um-boundary_layer
+        """Add ng_stress to namelist blayer"""
+        self.add_setting(
+            config, ["namelist:blayer", "ng_stress"], "'BG97_limited'"
+        )
 
         return config, self.reports

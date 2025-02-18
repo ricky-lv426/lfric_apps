@@ -34,5 +34,5 @@ export socrates_rev=1716
 export socrates_sources=
 export ukca_rev=um13.7
 export ukca_sources=
-export um_rev=128470
+export um_rev=128478
 export um_sources=

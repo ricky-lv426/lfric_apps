@@ -406,3 +406,19 @@ class vn20_t552(MacroUpgrade):
         self.add_setting(config, [nml, "dx_ref"], "50000.0")
 
         return config, self.reports
+
+
+class vn20_t562(MacroUpgrade):
+    """Upgrade macro for ticket #562 by Paul Burns."""
+
+    BEFORE_TAG = "vn2.0_t552"
+    AFTER_TAG = "vn2.0_t562"
+
+    def upgrade(self, config, meta_config=None):
+        # Commands From: rose-meta/um-boundary_layer
+        """Add ng_stress to namelist blayer"""
+        self.add_setting(
+            config, ["namelist:blayer", "ng_stress"], "'BG97_limited'"
+        )
+
+        return config, self.reports

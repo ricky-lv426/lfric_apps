@@ -63,7 +63,10 @@ module um_physics_init_mod
                                         bl_levels_in => bl_levels,             &
                                         kprof_cu_in => kprof_cu,               &
                                         kprof_cu_buoy_integ,                   &
-                                        kprof_cu_buoy_integ_low
+                                        kprof_cu_buoy_integ_low,               &
+                                        ng_stress_in => ng_stress,             &
+                                        ng_stress_BG97_limited,                &
+                                        ng_stress_BG97_original
 
   use cloud_config_mod,          only : scheme, scheme_smith, scheme_pc2,     &
                                         scheme_bimodal,                       &
@@ -280,11 +283,13 @@ contains
          a_ent_shr_nml, alpha_cd, puns, pstb, kprof_cu,                    &
          non_local_bl, flux_bc_opt, i_bl_vn_9c, sharp_sea_mes_land,        &
          lem_conven, to_sharp_across_1km, off, on, DynDiag_Ribased,        &
-         DynDiag_ZL_corrn, blend_allpoints, ng_stress, lem_std, lem_adjust,&
-         interactive_fluxes, specified_fluxes_only, except_disc_inv,       &
-         ntml_level_corrn, free_trop_layers, sharpest, sg_shear_enh_lambda,&
-         l_new_kcloudtop, buoy_integ, l_reset_dec_thres, DynDiag_ZL_CuOnly,&
-         var_diags_opt, i_interp_local, i_interp_local_gradients,          &
+         DynDiag_ZL_corrn, blend_allpoints, ng_stress,                     &
+         BrownGrant97_limited, BrownGrant97_original, lem_std,             &
+         lem_adjust, interactive_fluxes, specified_fluxes_only,            &
+         except_disc_inv, ntml_level_corrn, free_trop_layers, sharpest,    &
+         sg_shear_enh_lambda, l_new_kcloudtop, buoy_integ,                 &
+         l_reset_dec_thres, DynDiag_ZL_CuOnly, var_diags_opt,              &
+         i_interp_local, i_interp_local_gradients,                         &
          split_tke_and_inv, l_noice_in_turb, l_use_var_fixes,              &
          i_interp_local_cf_dbdz, tke_diag_fac, a_ent_2, dec_thres_cloud,   &
          dec_thres_cu, near_neut_z_on_l, blend_gridindep_fa,               &
@@ -628,6 +633,14 @@ contains
         case(kprof_cu_buoy_integ_low)
           kprof_cu = buoy_integ_low
       end select
+
+      select case(ng_stress_in)
+        case(ng_stress_BG97_limited)
+          ng_stress = BrownGrant97_limited
+        case(ng_stress_BG97_original)
+          ng_stress = BrownGrant97_original
+      end select
+
       l_noice_in_turb = noice_in_turb
       l_new_kcloudtop   = new_kcloudtop
       l_reset_dec_thres = .true.
