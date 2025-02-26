@@ -48,9 +48,9 @@ module lfric2lfric_infrastructure_mod
   !------------------------------------
   ! Configuration modules
   !------------------------------------
-  use base_mesh_config_mod,       only : GEOMETRY_SPHERICAL, &
-                                         GEOMETRY_PLANAR
-  use lfric2lfric_config_mod,     only : regrid_method_map
+  use lfric2lfric_config_mod,     only : regrid_method_map,         &
+                                         source_geometry_spherical, &
+                                         source_geometry_planar
 
 
   implicit none
@@ -97,8 +97,8 @@ contains
     !-----------------------
     ! Mesh Pointers
     !-----------------------
-    type(mesh_type),     pointer :: mesh
-    type(mesh_type),     pointer :: twod_mesh
+    type(mesh_type),     pointer :: mesh_src
+    type(mesh_type),     pointer :: twod_mesh_src
     type(mesh_type),     pointer :: mesh_dst
     type(mesh_type),     pointer :: twod_mesh_dst
 
@@ -106,14 +106,11 @@ contains
     type(uniform_extrusion_type), allocatable :: extrusion_2d
 
     ! Pointers for namelists
-    type(namelist_type), pointer :: base_mesh_nml
     type(namelist_type), pointer :: planet_nml
     type(namelist_type), pointer :: lfric2lfric_nml
     type(namelist_type), pointer :: files_nml
 
     ! Namelist parameters
-    character(len=str_def)                 :: source_mesh_name
-    character(len=str_def)                 :: destination_mesh_name
     character(len=str_def)                 :: mesh_names(2)
     character(len=str_def),    allocatable :: twod_names(:)
     character(len=str_def)                 :: start_dump_filename
@@ -123,13 +120,17 @@ contains
     integer(kind=i_def)     :: target_domain
 
     integer(kind=i_def)     :: stencil_depth
-    integer(kind=i_def)     :: geometry
+    integer(kind=i_def)     :: source_geometry
     integer(i_def)          :: regrid_method
     real(kind=r_def)        :: domain_bottom
     real(kind=r_def)        :: scaled_radius
 
     integer(kind=i_def)            :: i
     integer(kind=i_def), parameter :: one_layer = 1_i_def
+
+    integer(kind=i_def), parameter :: dst = 1
+    integer(kind=i_def), parameter :: src = 2
+
 
     !------------------------
     ! XIOS contexts
@@ -147,12 +148,10 @@ contains
     ! -------------------------------
     ! 0.0 Extract namelist variables
     ! -------------------------------
-    base_mesh_nml   => modeldb%configuration%get_namelist('base_mesh')
     planet_nml      => modeldb%configuration%get_namelist('planet')
     lfric2lfric_nml => modeldb%configuration%get_namelist('lfric2lfric')
     files_nml       => modeldb%configuration%get_namelist('files')
 
-    call base_mesh_nml%get_value( 'geometry', geometry )
     call planet_nml%get_value( 'scaled_radius', scaled_radius )
 
     ! Check lfric2lfric configuration settings are allowed
@@ -161,10 +160,11 @@ contains
     call lfric2lfric_nml%get_value( 'origin_domain', origin_domain )
     call lfric2lfric_nml%get_value( 'regrid_method', regrid_method )
     call lfric2lfric_nml%get_value( 'destination_mesh_name', &
-                                             destination_mesh_name )
+                                             mesh_names(dst) )
     call lfric2lfric_nml%get_value( 'source_mesh_name', &
-                                             source_mesh_name )
+                                             mesh_names(src) )
     call lfric2lfric_nml%get_value( 'target_domain', target_domain )
+    call lfric2lfric_nml%get_value( 'source_geometry', source_geometry )
     call files_nml%get_value( 'start_dump_filename', start_dump_filename )
 
     !=======================================================================
@@ -173,10 +173,10 @@ contains
     !-----------------------------------------------------------------------
     ! 1.1 Create the required extrusions
     !-----------------------------------------------------------------------
-    select case (geometry)
-      case (GEOMETRY_PLANAR)
+    select case (source_geometry)
+      case (source_geometry_planar)
         domain_bottom = 0.0_r_def
-      case (GEOMETRY_SPHERICAL)
+      case (source_geometry_spherical)
         domain_bottom = scaled_radius
       case default
         call log_event("Invalid geometry for mesh initialisation", &
@@ -196,12 +196,8 @@ contains
     call init_mesh( modeldb%configuration,       &
                     modeldb%mpi%get_comm_rank(), &
                     modeldb%mpi%get_comm_size(), &
-                    destination_mesh_name,       &
-                    source_mesh_name, extrusion, &
+                    mesh_names, extrusion,       &
                     stencil_depth, regrid_method )
-
-    mesh_names(1) = destination_mesh_name
-    mesh_names(2) = source_mesh_name
 
     allocate( twod_names, source=mesh_names )
     do i=1, size(twod_names)
@@ -226,19 +222,19 @@ contains
     ! 2.2 Create the coordinates fields
     !-----------------------------------------------------------------------
     ! Assign pointers to the correct meshes
-    mesh          => mesh_collection%get_mesh(trim(source_mesh_name))
-    twod_mesh     => mesh_collection%get_mesh(trim(twod_names(2)))
-    mesh_dst      => mesh_collection%get_mesh(trim(destination_mesh_name))
-    twod_mesh_dst => mesh_collection%get_mesh(trim(twod_names(1)))
+    mesh_src      => mesh_collection%get_mesh(trim(mesh_names(src)))
+    twod_mesh_src => mesh_collection%get_mesh(trim(twod_names(src)))
+    mesh_dst      => mesh_collection%get_mesh(trim(mesh_names(dst)))
+    twod_mesh_dst => mesh_collection%get_mesh(trim(twod_names(dst)))
 
     deallocate(twod_names)
 
     ! Log this change
     call log_event('Source mesh set to: '           &
-                   //mesh%get_mesh_name(),          &
+                   //mesh_src%get_mesh_name(),          &
                    log_level_debug)
     call log_event('Source 2D mesh set to: '        &
-                   //twod_mesh%get_mesh_name(),     &
+                   //twod_mesh_src%get_mesh_name(),     &
                    log_level_debug)
     call log_event('Destination mesh set to: '      &
                    //mesh_dst%get_mesh_name(),      &
@@ -259,7 +255,7 @@ contains
 
     ! Initialise the IO context with all the required info
     call init_io( xios_ctx_dst,                     &
-                  mesh_dst%get_mesh_name(),         &
+                  mesh_names(dst),                  &
                   modeldb,                          &
                   chi_inventory,                    &
                   panel_id_inventory,               &
@@ -287,8 +283,8 @@ contains
     call init_lfric2lfric_src_files( file_list, modeldb )
 
     ! Get panel_id and chi from correct mesh
-    call chi_inventory%get_field_array(mesh, chi)
-    call panel_id_inventory%get_field(mesh, panel_id)
+    call chi_inventory%get_field_array(mesh_src, chi)
+    call panel_id_inventory%get_field(mesh_src, panel_id)
 
     ! Using correct chi and panel_id, initialise xios context for source mesh
     call io_context_src%initialise_xios_context( modeldb%mpi%get_comm(), &
@@ -306,7 +302,7 @@ contains
     ! 4.0 Create and initialise prognostic fields
     !=======================================================================
     call init_lfric2lfric( modeldb, start_dump_filename,                   &
-                           source_collection_name, mesh, twod_mesh,        &
+                           source_collection_name, mesh_src, twod_mesh_src, &
                            target_collection_name, mesh_dst, twod_mesh_dst )
 
   end subroutine initialise_infrastructure

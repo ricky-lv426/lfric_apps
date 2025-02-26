@@ -242,8 +242,6 @@ class vn20_t450(MacroUpgrade):
 
     def upgrade(self, config, meta_config=None):
         # Commands From: applications/lfric2lfric/rose-meta/lfric-lfric2lfric
-        # Commands From: applications/lfric2lfric/rose-meta/lfric-lfric2lfric
-        # Commands From: applications/lfric2lfric/rose-meta/lfric-lfric2lfric
         self.add_setting(
             config,
             ["namelist:lfric2lfric", "destination_mesh_name"],
@@ -265,7 +263,6 @@ class vn20_t450(MacroUpgrade):
             "'input_mesh_faces'",
         )
         self.remove_setting(config, ["namelist:lfric2lfric", "chain_mesh_tags"])
-
         return config, self.reports
 
 
@@ -278,7 +275,6 @@ class vn20_t334(MacroUpgrade):
     def upgrade(self, config, meta_config=None):
         # Commands From: science/um_physics_interface/rose-meta/um-microphysics
         self.add_setting(config, ["namelist:microphysics", "mp_dz_scal"], "2.0")
-
         # Commands From: science/um_physics_interface/rose-meta/um-convection
         self.add_setting(config, ["namelist:convection", "efrac"], "1.0")
         self.add_setting(
@@ -286,7 +282,6 @@ class vn20_t334(MacroUpgrade):
         )
         self.add_setting(config, ["namelist:convection", "prog_ent_min"], "0.5")
         self.add_setting(config, ["namelist:convection", "qlmin"], "4.0e-4")
-
         # Commands From: science/um_physics_interface/rose-meta/um-cloud
         cvscheme = self.get_setting_value(
             config, ["namelist:convection", "cv_scheme"]
@@ -311,14 +306,11 @@ class vn20_t334(MacroUpgrade):
             self.add_setting(
                 config, ["namelist:cloud", "fsd_nonconv_const"], "1.14"
             )
-
         # Commands From: science/um_physics_interface/rose-meta/um-boundary_layer
         self.add_setting(config, ["namelist:blayer", "dec_thres_cu"], "0.05")
-
         # Commands From: science/um_physics_interface/rose-meta/um-aerosol
         self.add_setting(config, ["namelist:aerosol", "horiz_d"], "2.25")
         self.add_setting(config, ["namelist:aerosol", "us_am"], "1.45")
-
         return config, self.reports
 
 
@@ -334,11 +326,9 @@ class vn20_t249(MacroUpgrade):
         self.add_setting(config, [nml, "surf_temp_forcing"], "'none'")
         self.add_setting(config, [nml, "internal_flux_method"], "'uniform'")
         self.add_setting(config, [nml, "internal_flux_value"], "0.0")
-
         # Commands From: science/gungho/rose-meta/lfric-gungho
         nml = "namelist:files"
         self.add_setting(config, [nml, "internal_flux_ancil_path"], "''")
-
         return config, self.reports
 
 
@@ -352,7 +342,6 @@ class vn20_t547(MacroUpgrade):
         # Commands From: rose-meta/um-microphysics
         nml = "namelist:microphysics"
         self.add_setting(config, [nml, "heavy_rain_evap_fac"], "0.0")
-
         return config, self.reports
 
 
@@ -368,7 +357,6 @@ class vn20_t429(MacroUpgrade):
         # (enabled if chem_scheme='flexchem')
         nml = "namelist:chemistry"
         self.add_setting(config, [nml, "flexchem_opt"], "'bs1999'")
-
         # Commands From: rose-meta/socrates-radiation
         # Add more radiatively active gases: Cs, K, Li, Na, Rb, TiO, VO
         nml = "namelist:radiative_gases"
@@ -414,7 +402,6 @@ class vn20_t429(MacroUpgrade):
         self.add_setting(config, [nml, "vo_clim_fcg_years"], "0")
         self.add_setting(config, [nml, "vo_mix_ratio"], "0")
         self.add_setting(config, [nml, "vo_rad_opt"], "'off'")
-
         return config, self.reports
 
 
@@ -429,7 +416,6 @@ class vn20_t552(MacroUpgrade):
         nml = "namelist:convection"
         self.add_setting(config, [nml, "resdep_precipramp"], ".false.")
         self.add_setting(config, [nml, "dx_ref"], "50000.0")
-
         return config, self.reports
 
 
@@ -445,7 +431,6 @@ class vn20_t562(MacroUpgrade):
         self.add_setting(
             config, ["namelist:blayer", "ng_stress"], "'BG97_limited'"
         )
-
         return config, self.reports
 
 
@@ -459,7 +444,6 @@ class vn20_t472(MacroUpgrade):
         # Commands From: rose-meta/um-convection
         nml = "namelist:convection"
         self.add_setting(config, [nml, "l_cvdiag_ctop_qmax"], ".false.")
-
         # Commands From: rose-meta/um-boundary_layer
         nml = "namelist:blayer"
         self.add_setting(config, [nml, "dzrad_disc_opt"], "'level_ntm1'")
@@ -475,7 +459,6 @@ class vn20_t472(MacroUpgrade):
         else:
             sc_diag_opt = "'orig'"
         self.add_setting(config, [nml, "sc_diag_opt"], sc_diag_opt)
-
         return config, self.reports
 
 
@@ -512,7 +495,6 @@ class vn20_t84(MacroUpgrade):
             config, ["namelist:wind_forcing", "profile_data_v"], "0.0"
         )
         self.add_setting(config, ["namelist:wind_forcing", "times"], "0.0")
-
         return config, self.reports
 
 
@@ -736,5 +718,82 @@ class vn20_t588(MacroUpgrade):
                 ["namelist:surface", surface],
                 ["namelist:jules_hydrology", jules],
             )
+        return config, self.reports
+
+
+class vn20_t455(MacroUpgrade):
+    """Upgrade macro for ticket #455 by Juan M Castillo."""
+
+    BEFORE_TAG = "vn2.0_t588"
+    AFTER_TAG = "vn2.0_t455"
+
+    def upgrade(self, config, meta_config=None):
+        # Commands From: rose-meta/lfric-lfric2lfric
+        configuration = self.get_setting_value(
+            config, ["file:configuration.nml", "source"]
+        )
+        if "namelist:partitioning(:)" not in configuration:
+            configuration = configuration.replace(
+                "namelist:partitioning", "namelist:partitioning(:)"
+            )
+        self.change_setting_value(
+            config, ["file:configuration.nml", "source"], configuration
+        )
+        self.remove_setting(config, ["namelist:partitioning"])
+        self.add_setting(
+            config,
+            ["namelist:partitioning(source)", "mesh_type"],
+            "'source'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:partitioning(source)", "partitioner"],
+            "'cubedsphere'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:partitioning(source)", "panel_decomposition"],
+            "'auto'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:partitioning(destination)", "mesh_type"],
+            "'destination'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:partitioning(destination)", "partitioner"],
+            "'cubedsphere'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:partitioning(destination)", "panel_decomposition"],
+            "'auto'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:lfric2lfric", "prepartitioned_meshes"],
+            ".false.",
+        )
+        self.add_setting(
+            config,
+            ["namelist:lfric2lfric", "destination_geometry"],
+            "'spherical'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:lfric2lfric", "destination_topology"],
+            "'fully_periodic'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:lfric2lfric", "source_geometry"],
+            "'spherical'",
+        )
+        self.add_setting(
+            config,
+            ["namelist:lfric2lfric", "source_topology"],
+            "'fully_periodic'",
+        )
 
         return config, self.reports

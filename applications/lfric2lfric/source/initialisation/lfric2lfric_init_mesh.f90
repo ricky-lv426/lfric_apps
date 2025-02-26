@@ -25,7 +25,7 @@
 module lfric2lfric_init_mesh_mod
 
   use add_mesh_map_mod,            only: assign_mesh_maps
-  use constants_mod,               only: str_def, i_def, l_def, str_max_filename
+  use constants_mod,               only: i_def, l_def, str_max_filename
   use check_global_mesh_mod,       only: check_global_mesh
   use check_local_mesh_mod,        only: check_local_mesh
   use create_mesh_mod,             only: create_mesh
@@ -43,20 +43,24 @@ module lfric2lfric_init_mesh_mod
   use namelist_mod,                only: namelist_type
   use partition_mod,               only: partitioner_interface
   use sci_query_mod,               only: check_uniform_partitions
-  use runtime_partition_lfric_mod, only: get_partition_parameters
-  use runtime_partition_mod,       only: mesh_cubedsphere,       &
-                                         mesh_planar,            &
+  use runtime_partition_mod,       only: mesh_cubedsphere,          &
+                                         mesh_planar, decomp_auto,  &
+                                         decomp_row, decomp_column, &
+                                         get_partition_parameters,  &
                                          create_local_mesh_maps, &
                                          create_local_mesh
   use global_mesh_collection_mod,  only: global_mesh_collection
-
-  ! Configuration modules
-  use finite_element_config_mod,   only: cellshape_quadrilateral
-  use base_mesh_config_mod,        only: geometry_spherical, &
-                                         topology_fully_periodic
+  use partitioning_config_mod,     only: panel_decomposition_auto,   &
+                                         panel_decomposition_row,    &
+                                         panel_decomposition_column, &
+                                         panel_decomposition_custom
 
   ! Lfric2lfric modules
-  use lfric2lfric_config_mod,      only: regrid_method_map
+  use lfric2lfric_config_mod,      only: regrid_method_map,                   &
+                                         source_geometry_spherical,           &
+                                         destination_geometry_spherical,      &
+                                         source_topology_fully_periodic,      &
+                                         destination_topology_fully_periodic
 
   implicit none
 
@@ -73,14 +77,10 @@ contains
 !> @param[in] configuration          Application configuration object.
 !>                                   This configuration object should contain the
 !>                                   following defined namelist objects:
-!>                                      * base_mesh
 !>                                      * partititioning
 !> @param[in] local_rank             The MPI rank of this process.
 !> @param[in] total_ranks            Total number of MPI ranks in this job.
-!> @param[in] destination_mesh_name  Destination mesh name to load from the mesh
-!>                                   input file(s).
-!> @param[in] source_mesh_name       Source mesh name to load from the mesh
-!>                                   input file(s).
+!> @param[in] mesh_names             Mesh names to load from the mesh input file(s).
 !> @param[in] extrusion              Extrusion object to be applied to meshes.
 !> @param[in] stencil_depth          Required stencil depth for the application.
 !> @param[in] regrid_method          Apply check for even partitions with the
@@ -90,8 +90,7 @@ contains
 !===============================================================================
 subroutine init_mesh( configuration,           &
                       local_rank, total_ranks, &
-                      destination_mesh_name,   &
-                      source_mesh_name,        &
+                      mesh_names,              &
                       extrusion,               &
                       stencil_depth,           &
                       regrid_method )
@@ -103,8 +102,7 @@ subroutine init_mesh( configuration,           &
 
   integer(kind=i_def),   intent(in) :: local_rank
   integer(kind=i_def),   intent(in) :: total_ranks
-  character(len=*),      intent(in) :: destination_mesh_name
-  character(len=*),      intent(in) :: source_mesh_name
+  character(len=*),      intent(in) :: mesh_names(2)
   class(extrusion_type), intent(in) :: extrusion
   integer(kind=i_def),   intent(in) :: stencil_depth
   integer(kind=i_def),   intent(in) :: regrid_method
@@ -112,53 +110,92 @@ subroutine init_mesh( configuration,           &
   ! Parameters
   character(len=9), parameter :: routine_name = 'init_mesh'
 
+  integer(kind=i_def), parameter :: dst = 1
+  integer(kind=i_def), parameter :: src = 2
+
   ! Counters
   integer(kind=i_def) :: i
 
   ! Namelist variables
-  type(namelist_type), pointer :: base_mesh_nml      => null()
-  type(namelist_type), pointer :: partitioning_nml   => null()
-  type(namelist_type), pointer :: lfric2lfric_nml    => null()
+  type(namelist_type), pointer :: lfric2lfric_nml      => null()
+  type(namelist_type), pointer :: src_partitioning_nml => null()
+  type(namelist_type), pointer :: dst_partitioning_nml => null()
 
-  logical(kind=l_def)     :: prepartitioned
-  logical(l_def) :: generate_inner_haloes
+  ! partitioning namelist variables
+  integer(kind=i_def)              :: panel_decomposition(2)
+  integer(kind=i_def)              :: panel_xproc(2)
+  integer(kind=i_def)              :: panel_yproc(2)
+  logical(l_def)                   :: generate_inner_haloes(2)
 
-  integer(kind=i_def) :: geometry
-  integer(kind=i_def) :: topology
-  integer(kind=i_def) :: mesh_selection
+  ! lfric2lfric namelist variables
+  logical(kind=l_def)              :: prepartitioned
 
-  character(len=str_max_filename)  :: destination_meshfile_prefix
-  character(len=str_max_filename)  :: source_meshfile_prefix
+  character(len=str_max_filename)  :: meshfile_prefix(2)
+  integer(kind=i_def)              :: geometry(2)
+  integer(kind=i_def)              :: topology(2)
+  integer(kind=i_def)              :: mesh_selection(2)
 
   ! Local variables
-  character(len=str_max_filename)     :: source_mesh_file
-  character(len=str_max_filename)     :: destination_mesh_file
-  character(len=str_def)              :: mesh_names(2)
+  character(len=str_max_filename)     :: mesh_file(2)
 
   type(global_mesh_type),           pointer :: global_mesh_ptr => null()
-  procedure(partitioner_interface), pointer :: partitioner_ptr => null()
+  procedure(partitioner_interface), pointer :: partitioner_src => null()
+  procedure(partitioner_interface), pointer :: partitioner_dst => null()
 
-  integer(kind=i_def) :: xproc  ! Processor ranks in mesh panel x-direction
-  integer(kind=i_def) :: yproc  ! Processor ranks in mesh panel y-direction
+  integer(kind=i_def) :: xproc(2)  ! Processor ranks in mesh panel x-direction
+  integer(kind=i_def) :: yproc(2)  ! Processor ranks in mesh panel y-direction
   logical(kind=l_def) :: partitions_good
 
   !============================================================================
   ! Extract and check configuration variables
   !============================================================================
-  base_mesh_nml      => configuration%get_namelist('base_mesh')
-  partitioning_nml   => configuration%get_namelist('partitioning')
+  ! Read partitioning namelist for source and destination meshes
+  src_partitioning_nml  => configuration%get_namelist('partitioning', &
+                                                      'source')
+  call src_partitioning_nml%get_value( 'generate_inner_haloes', &
+                                        generate_inner_haloes(src) )
+  call src_partitioning_nml%get_value( 'panel_decomposition', &
+                                        panel_decomposition(src) )
+  if (panel_decomposition(src) == panel_decomposition_custom) then
+    call src_partitioning_nml%get_value( 'panel_xproc', &
+                                          panel_xproc(src) )
+    call src_partitioning_nml%get_value( 'panel_yproc', &
+                                          panel_yproc(src) )
+  end if
+
+  dst_partitioning_nml  => configuration%get_namelist('partitioning', &
+                                                      'destination')
+  call dst_partitioning_nml%get_value( 'generate_inner_haloes', &
+                                        generate_inner_haloes(dst) )
+  call dst_partitioning_nml%get_value( 'panel_decomposition', &
+                                        panel_decomposition(dst) )
+  if (panel_decomposition(dst) == panel_decomposition_custom) then
+    call dst_partitioning_nml%get_value( 'panel_xproc', &
+                                          panel_xproc(dst) )
+    call dst_partitioning_nml%get_value( 'panel_yproc', &
+                                          panel_yproc(dst) )
+  end if
+
+  ! Read lfric2lfric namelist
   lfric2lfric_nml    => configuration%get_namelist('lfric2lfric')
 
-  call base_mesh_nml%get_value( 'prepartitioned', prepartitioned )
-  call partitioning_nml%get_value( 'generate_inner_haloes', &
-                                    generate_inner_haloes )
+  call lfric2lfric_nml%get_value( 'prepartitioned_meshes', &
+                                   prepartitioned )
   call lfric2lfric_nml%get_value( 'destination_meshfile_prefix', &
-                                   destination_meshfile_prefix )
+                                   meshfile_prefix(dst) )
+  call lfric2lfric_nml%get_value( 'destination_geometry', &
+                                   geometry(dst) )
+  call lfric2lfric_nml%get_value( 'destination_topology', &
+                                   topology(dst) )
   call lfric2lfric_nml%get_value( 'source_meshfile_prefix', &
-                                   source_meshfile_prefix )
+                                   meshfile_prefix(src) )
+  call lfric2lfric_nml%get_value( 'source_geometry', &
+                                   geometry(src) )
+  call lfric2lfric_nml%get_value( 'source_topology', &
+                                   topology(src) )
 
   if ( regrid_method == regrid_method_map .and. &
-     trim(source_meshfile_prefix) /= trim(destination_meshfile_prefix) ) then
+     trim(meshfile_prefix(src)) /= trim(meshfile_prefix(dst)) ) then
 
     write( log_scratch_space, '(A)' )                                &
          'When using LFRic intermesh maps, source and destination '//&
@@ -166,8 +203,6 @@ subroutine init_mesh( configuration,           &
     call log_event(log_scratch_space, log_level_error)
   end if
 
-  mesh_names(1) = destination_mesh_name
-  mesh_names(2) = source_mesh_name
 
   !===========================================================================
   ! Create local mesh objects:
@@ -193,12 +228,12 @@ subroutine init_mesh( configuration,           &
     !   <input_basename>_<local_rank>_<total_ranks>.nc
     !
     ! Where 1 rank is assigned to each mesh partition.
-    write(destination_mesh_file,'(A,2(I0,A))') &
-        trim(destination_meshfile_prefix) // '_', local_rank, '-', &
+    write(mesh_file(dst),'(A,2(I0,A))') &
+        trim(meshfile_prefix(dst)) // '_', local_rank, '-', &
                                            total_ranks, '.nc'
 
-    write(source_mesh_file,'(A,2(I0,A))') &
-        trim(source_meshfile_prefix) // '_', local_rank, '-',  &
+    write(mesh_file(src),'(A,2(I0,A))') &
+        trim(meshfile_prefix(src)) // '_', local_rank, '-',  &
                                            total_ranks, '.nc'
 
     ! Read in all local mesh data for this rank and
@@ -207,19 +242,19 @@ subroutine init_mesh( configuration,           &
     ! Each partitioned mesh file will contain meshes of the
     ! same name as all other partitions.
     call log_event( 'Using pre-partitioned mesh file:', log_level_info )
-    call log_event( '   '//trim(destination_mesh_file), log_level_info )
+    call log_event( '   '//trim(mesh_file(dst)), log_level_info )
     call log_event( "Loading local mesh(es)", log_level_info )
 
-    if (destination_mesh_file == source_mesh_file) then
-      call load_local_mesh( destination_mesh_file, mesh_names )
+    if (mesh_file(dst) == mesh_file(src)) then
+      call load_local_mesh( mesh_file(dst), mesh_names )
     else
-      call load_local_mesh( destination_mesh_file, destination_mesh_name )
+      call load_local_mesh( mesh_file(dst), mesh_names(dst) )
 
       call log_event( 'Using pre-partitioned mesh file:', log_level_info )
-      call log_event( '   '//trim(source_mesh_file), log_level_info )
+      call log_event( '   '//trim(mesh_file(src)), log_level_info )
       call log_event( "Loading local mesh(es)", log_level_info )
 
-      call load_local_mesh( source_mesh_file, source_mesh_name )
+      call load_local_mesh( mesh_file(src), mesh_names(src) )
     endif
 
     ! Apply configuration related checks to ensure that these
@@ -237,45 +272,100 @@ subroutine init_mesh( configuration,           &
     ! need to be loaded after the relevant local meshes have
     ! been loaded.
     if (regrid_method == regrid_method_map) then
-      call load_local_mesh_maps( destination_mesh_file, mesh_names )
+      call load_local_mesh_maps( mesh_file(dst), mesh_names )
     end if
   else
 
     !==========================================================================
     ! Perform runtime partitioning of global meshes.
     !==========================================================================
-    call base_mesh_nml%get_value( 'geometry', geometry )
-    call base_mesh_nml%get_value( 'topology', topology )
-
-    if ( geometry == geometry_spherical .and. &
-         topology == topology_fully_periodic ) then
-      mesh_selection = mesh_cubedsphere
+    if ( geometry(src) == source_geometry_spherical .and. &
+         topology(src) == source_topology_fully_periodic ) then
+      mesh_selection(src) = mesh_cubedsphere
       call log_event( "Setting up cubed-sphere partition mesh(es)", &
                       log_level_debug )
     else
-      mesh_selection = mesh_planar
+      mesh_selection(src) = mesh_planar
+      call log_event( "Setting up planar partition mesh(es)", &
+                      log_level_debug )
+    end if
+
+    if ( geometry(dst) == destination_geometry_spherical .and. &
+         topology(dst) == destination_topology_fully_periodic ) then
+      mesh_selection(dst) = mesh_cubedsphere
+      call log_event( "Setting up cubed-sphere partition mesh(es)", &
+                      log_level_debug )
+    else
+      mesh_selection(dst) = mesh_planar
       call log_event( "Setting up planar partition mesh(es)", &
                       log_level_debug )
     end if
 
     call log_event( "Setting up partition mesh(es)", log_level_info )
-    write(source_mesh_file,'(A)') trim(source_meshfile_prefix) // '.nc'
-    write(destination_mesh_file,'(A)') trim(destination_meshfile_prefix) &
-                                                               // '.nc'
+    write(mesh_file(src),'(A)') trim(meshfile_prefix(src)) // '.nc'
+    write(mesh_file(dst),'(A)') trim(meshfile_prefix(dst)) // '.nc'
 
     ! Set constants that will control partitioning.
     !===========================================================
-    call get_partition_parameters( configuration, mesh_selection, &
-                                   total_ranks, xproc, yproc,     &
-                                   partitioner_ptr )
+    do i=1, 2
+      select case (panel_decomposition(i))
+
+      case (panel_decomposition_auto)
+        panel_decomposition(i) = decomp_auto
+
+      case (panel_decomposition_row)
+        panel_decomposition(i) = decomp_row
+
+      case (panel_decomposition_column)
+        panel_decomposition(i) = decomp_column
+
+      end select
+
+    end do
+
+    if (panel_decomposition(dst) == panel_decomposition_custom) then
+      call get_partition_parameters( mesh_selection(dst),   &
+                                     total_ranks,           &
+                                     panel_xproc(dst),      &
+                                     panel_yproc(dst),      &
+                                     partitioner_dst )
+      xproc(dst) = panel_xproc(dst)
+      yproc(dst) = panel_yproc(dst)
+
+    else
+      call get_partition_parameters( mesh_selection(dst),      &
+                                     panel_decomposition(dst), &
+                                     total_ranks,              &
+                                     xproc(dst),         &
+                                     yproc(dst),         &
+                                     partitioner_dst )
+    end if
+
+    if (panel_decomposition(src) == panel_decomposition_custom) then
+      call get_partition_parameters( mesh_selection(src),   &
+                                     total_ranks,           &
+                                     panel_xproc(src),      &
+                                     panel_yproc(src),      &
+                                     partitioner_src )
+      xproc(src) = panel_xproc(src)
+      yproc(src) = panel_yproc(src)
+
+    else
+      call get_partition_parameters( mesh_selection(src),      &
+                                     panel_decomposition(src), &
+                                     total_ranks,              &
+                                     xproc(src),         &
+                                     yproc(src),         &
+                                     partitioner_src )
+    end if
 
     ! Read in all global meshes from input file
     !===========================================================
-    if (destination_mesh_file == source_mesh_file) then
-      call load_global_mesh( destination_mesh_file, mesh_names )
+    if (mesh_file(dst) == mesh_file(src)) then
+      call load_global_mesh( mesh_file(dst), mesh_names )
     else
-      call load_global_mesh( destination_mesh_file, destination_mesh_name )
-      call load_global_mesh( source_mesh_file, destination_mesh_name )
+      call load_global_mesh( mesh_file(dst), mesh_names(dst) )
+      call load_global_mesh( mesh_file(src), mesh_names(src) )
     endif
 
     if (regrid_method == regrid_method_map) then
@@ -302,7 +392,7 @@ subroutine init_mesh( configuration,           &
         global_mesh_ptr => &
                 global_mesh_collection%get_global_mesh( mesh_names(i) )
         partitions_good = check_uniform_partitions( global_mesh_ptr, &
-                                                    xproc, yproc )
+                                                    xproc(i), yproc(i) )
         if ( .not. partitions_good ) then
           write(log_scratch_space, '(A)')                                &
               'Global mesh ('// trim(global_mesh_ptr%get_mesh_name()) // &
@@ -315,18 +405,25 @@ subroutine init_mesh( configuration,           &
 
     ! Partition the global meshes
     !===========================================================
-    call create_local_mesh( mesh_names,              &
-                            local_rank, total_ranks, &
-                            xproc, yproc,            &
-                            stencil_depth,           &
-                            generate_inner_haloes,   &
-                            partitioner_ptr )
+    call create_local_mesh( mesh_names(dst:dst),           &
+                            local_rank, total_ranks,       &
+                            xproc(dst), yproc(dst),        &
+                            stencil_depth,                 &
+                            generate_inner_haloes(dst),    &
+                            partitioner_dst )
+
+    call create_local_mesh( mesh_names(src:src),           &
+                            local_rank, total_ranks,       &
+                            xproc(src), yproc(src),        &
+                            stencil_depth,                 &
+                            generate_inner_haloes(src),    &
+                            partitioner_src )
 
     ! Read in the global intergrid mesh mappings,
     ! then create the associated local mesh maps
     !===========================================================
     if (regrid_method == regrid_method_map) then
-      call create_local_mesh_maps( destination_mesh_file )
+      call create_local_mesh_maps( mesh_file(dst) )
     end if
 
   end if  ! prepartitioned
