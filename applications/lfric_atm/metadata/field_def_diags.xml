@@ -478,6 +478,10 @@
   <field id="surface__sea_ice_tile" domain_ref="face"> zoomed__sea_ice_tile </field>
   <field id="surface__sea_tile" domain_ref="face"> zoomed__sea_tile </field>
   <field id="surface__sea_ice_fraction" name="sea_ice_fraction" long_name="sea_ice_area_fraction" standard_name="sea_ice_area_fraction" unit="1" domain_ref="face"> surface__sea_ice_tile / (surface__sea_ice_tile + surface__sea_tile + 1.0e-16) </field>
+  <field id="zoomed__urban_tile" field_ref="surface__tile_fraction" domain_ref="face" axis_ref="surface_tiles_urban_zoom"/>
+  <field id="surface__urban_tile" name="urban_tile_fraction" long_name="urban_tile_fraction" domain_ref="face"> zoomed__urban_tile </field>
+  <field id="zoomed__land_ice_tile" field_ref="surface__tile_fraction" domain_ref="face" axis_ref="surface_tiles_land_ice_zoom"/>
+  <field id="surface__land_ice_tile" name="land_ice_tile_fraction" long_name="land_ice_tile_fraction" domain_ref="face"> zoomed__land_ice_tile </field>
   <field id="surface__land_fraction" name="land_fraction" long_name="land_area_fraction" standard_name="land_area_fraction" unit="1" domain_ref="face"> 1.0 - (surface__sea_ice_tile + surface__sea_tile) </field>
   <field id="surface__z0m" name="z0m" long_name="surface_roughness_length" unit="m" domain_ref="face" />
   <field id="surface__z0m_tile" name="z0m_tile" long_name="surface_roughness_length_on_tiles" unit="m" domain_ref="face" axis_ref="surface_tiles" />
@@ -585,6 +589,8 @@
   <field id="snow__snow_layer_ice_mass" name="snow_layer_ice_mass" long_name="snow_layer_ice_mass" unit="kg m-2" domain_ref="face" axis_ref="snow_layers_and_tiles" />
   <field id="snow__snow_layer_liq_mass" name="snow_layer_liq_mass" long_name="snow_layer_liquid_mass" unit="kg m-2" domain_ref="face" axis_ref="snow_layers_and_tiles" />
   <field id="snow__snow_layer_rgrain" name="snow_layer_rgrain" long_name="snow_layer_grain_size" unit="microns" domain_ref="face" axis_ref="snow_layers_and_tiles" />
+  <field id="zoomed__snowpack_density_C3grass" field_ref="snow__snowpack_density" axis_ref="surface_tiles_C3grass_zoom"/>
+  <field id="snow__snowpack_density_C3grass" name="snowpack_density_C3grass" long_name="snowpack_density_C3grass" domain_ref="face"> zoomed__snowpack_density_C3grass </field>
   <!-- Jules sea ice diagnostics -->
   <field id="seaice__sea_ice_fraction" name="sea_ice_fraction" long_name="sea_ice_fraction" unit="1" domain_ref="face" axis_ref="sea_ice_categories" />
   <field id="seaice__sea_ice_thickness" name="sea_ice_thickness" long_name="sea_ice_thickness" unit="m" domain_ref="face" axis_ref="sea_ice_categories" />
@@ -604,6 +610,11 @@
   <field id="soil__soil_temperature" name="soil_temperature" long_name="soil_temperature" unit="K" domain_ref="face" axis_ref="soil_levels" />
   <field id="soil__water_table" name="water_table" long_name="water_table_depth" unit="m" domain_ref="face" />
   <field id="soil__soilm_change_lakes" name="soil_moisture_change_lakes" long_name="soil_moisture_change_from_lake_water_conservation" unit="kg m-2 s-1" domain_ref="face" />
+  <field id="zoomed__soil_moisture_top_layer" field_ref="soil__soil_moisture" axis_ref="soil_level_0_zoom"/>
+  <field id="soil__soil_moisture_top_layer" name="top_layer_soil_moisture_content" long_name="mass_content_of_water_in_top_soil_layer" unit="kg m-2" domain_ref="face"> zoomed__soil_moisture_top_layer </field>
+  <field id="soil__soil_moist_wilt" name="soil_moist_wilt" long_name="soil_moisture_at_wilting_point" unit="m3 m-3" domain_ref="face" />
+  <field id="soil__soil_moist_crit" name="soil_moist_crit" long_name="soil_moisture_at_critical_point" unit="m3 m-3" domain_ref="face" /> 
+  <field id="soil__soil_moist_sat" name="soil_moist_sat" long_name="soil_moisture_at_saturation" unit="m3 m-3" domain_ref="face" />
   <!-- Boundary layer turbulence diagnostics -->
   <field id="turbulence__dtheta_bl" name="dtheta_bl" long_name="potential_temperature_increment_from_bl_scheme" unit="K" grid_ref="full_level_face_grid" />
   <field id="turbulence__dt_bl" name="dt_bl" long_name="temperature_increment_from_bl_scheme" unit="K" grid_ref="full_level_face_grid" />

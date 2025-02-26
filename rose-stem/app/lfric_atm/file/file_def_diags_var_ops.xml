@@ -87,4 +87,22 @@
     </field_group>
   </file>
 
+  <!-- Background file for land surface -->
+  <!-- Time profile T+9 -->
+  <file id="lfric_bg_for_land_hofx" name="lfric_bg_for_land_hofx" output_freq="9h" convention="UGRID" enabled=".TRUE.">
+    <field_group freq_op="9h" operation="instant">
+      <field field_ref="orography" />
+      <field field_ref="surface__land_fraction" />
+      <field field_ref="surface__t1p5m" />
+      <field field_ref="soil__soil_moisture_top_layer" />
+      <field field_ref="surface__urban_tile" />
+      <field field_ref="surface__land_ice_tile" />
+      <field field_ref="snow__snowpack_density_C3grass" />
+      <field field_ref="snow__grid_snow_mass" />
+      <field field_ref="soil__soil_moist_wilt" />
+      <field field_ref="soil__soil_moist_crit" />
+      <field field_ref="soil__soil_moist_sat" />
+    </field_group>
+  </file>
+
 </file_definition>

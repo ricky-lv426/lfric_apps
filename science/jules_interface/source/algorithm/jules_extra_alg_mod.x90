@@ -285,7 +285,8 @@ contains
                                      soil_temperature, unfrozen_soil_moisture, &
                                      frozen_soil_moisture, throughfall,        &
                                      surface_runoff, sub_surface_runoff,       &
-                                     water_table,                              &
+                                     water_table, soil_moist_wilt,             &
+                                     soil_moist_crit, soil_moist_sat,          &
                                      grid_canopy_water,grid_throughfall)
 
       ! Output sea ice diagnostics

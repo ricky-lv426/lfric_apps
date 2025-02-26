@@ -13,6 +13,13 @@ module multidata_field_dimensions_mod
   use lfric_xios_diag_mod,       only: set_axis_dimension, &
                                        get_axis_dimension, &
                                        set_zoom_axis_attr
+#ifdef UM_PHYSICS
+  use jules_surface_mod,              only: l_urban2t
+  use jules_surface_types_config_mod, only: c3_grass,    &
+                                            ice,         &
+                                            urban,       &
+                                            urban_canyon
+#endif
 
   implicit none
 
@@ -87,6 +94,31 @@ subroutine sync_multidata_field_dimensions()
             get_multidata_field_dimension('land_tiles')+1,                    &
             1,                                                                &
             tolerate_missing_axes)
+      ! Settings for some land tile zoom axes
+      call set_zoom_axis_attr(                                                &
+            'surface_tiles_c3_grass_zoom_axis',                               &
+            (c3_grass - 1),                                                   &
+            1,                                                                &
+            tolerate_missing_axes)
+      call set_zoom_axis_attr(                                                &
+            'surface_tiles_land_ice_zoom_axis',                               &
+            (ice - 1),                                                        &
+            1,                                                                &
+            tolerate_missing_axes)
+      if ( l_urban2t ) then
+        call set_zoom_axis_attr(                                                &
+              'surface_tiles_urban_zoom_axis',                                  &
+              (urban_canyon - 1),                                               &
+              1,                                                                &
+              tolerate_missing_axes)
+      else
+        call set_zoom_axis_attr(                                                &
+              'surface_tiles_urban_zoom_axis',                                  &
+              (urban - 1),                                                      &
+              1,                                                                &
+              tolerate_missing_axes)
+      end if
+
 #endif
 end subroutine sync_multidata_field_dimensions
 

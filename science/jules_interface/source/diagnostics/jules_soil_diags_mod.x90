@@ -88,6 +88,9 @@ contains
   !> @param[in]     surface_runoff         Surface runoff
   !> @param[in]     sub_surface_runoff     Sub-surface runoff
   !> @param[in]     water_table            Depth of water table
+  !> @param[in]     soil_moist_wilt        Soil moisture at wilting point
+  !> @param[in]     soil_moist_crit        Soil moisture at critical point
+  !> @param[in]     soil_moist_sat         Soil moisture at saturation
   !> @param[in,out] grid_canopy_water      Grid canopy water
   !> @param[in,out] grid_throughfall       Grid throughfall
 
@@ -96,7 +99,8 @@ contains
                                      soil_temperature, unfrozen_soil_moisture, &
                                      frozen_soil_moisture, throughfall,        &
                                      surface_runoff, sub_surface_runoff,       &
-                                     water_table,                              &
+                                     water_table, soil_moist_wilt,             &
+                                     soil_moist_crit, soil_moist_sat,          &
                                      grid_canopy_water,grid_throughfall)
 
     use jules_control_init_mod, only : n_land_tile
@@ -109,7 +113,10 @@ contains
                                          soil_temperature,                     &
                                          unfrozen_soil_moisture,               &
                                          frozen_soil_moisture,                 &
-                                         water_table
+                                         water_table,                          &
+                                         soil_moist_wilt,                      &
+                                         soil_moist_crit,                      &
+                                         soil_moist_sat
 
     ! Diagnostics computed within the kernel
     type( field_type ), intent(in)    :: throughfall
@@ -129,6 +136,9 @@ contains
     call unfrozen_soil_moisture%write_field('soil__unfrozen_soil_moisture')
     call frozen_soil_moisture%write_field('soil__frozen_soil_moisture')
     call water_table%write_field('soil__water_table')
+    call soil_moist_wilt%write_field('soil__soil_moist_wilt')
+    call soil_moist_crit%write_field('soil__soil_moist_crit')
+    call soil_moist_sat%write_field('soil__soil_moist_sat')
 
     ! Diagnostics locally computed here from other fields
     if (grid_canopy_water_flag) then
