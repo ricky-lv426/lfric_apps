@@ -32,7 +32,7 @@ implicit none
 
 type, public, extends(kernel_type) :: radaer_kernel_type
   private
-  type(arg_type) :: meta_args(69) = (/                &
+  type(arg_type) :: meta_args(65) = (/                &
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! theta_in_wth
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! exner_in_wth
        ! trop_level
@@ -48,13 +48,11 @@ type, public, extends(kernel_type) :: radaer_kernel_type
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_bc
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_om
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_ss
-       arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_du
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! n_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_su
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_bc
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_om
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_ss
-       arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_du
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! n_ait_ins
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! ait_ins_bc
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! ait_ins_om
@@ -87,12 +85,10 @@ type, public, extends(kernel_type) :: radaer_kernel_type
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_bc_acc_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_om_acc_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_ss_acc_sol
-       arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_du_acc_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_su_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_bc_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_om_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_ss_cor_sol
-       arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_du_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_bc_ait_ins
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_om_ait_ins
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! pvol_du_acc_ins
@@ -137,13 +133,11 @@ contains
 !> @param[in]     acc_sol_bc         Climatology aerosol field
 !> @param[in]     acc_sol_om         Climatology aerosol field
 !> @param[in]     acc_sol_ss         Climatology aerosol field
-!> @param[in]     acc_sol_du         Climatology aerosol field
 !> @param[in]     n_cor_sol          Climatology aerosol field
 !> @param[in]     cor_sol_su         Climatology aerosol field
 !> @param[in]     cor_sol_bc         Climatology aerosol field
 !> @param[in]     cor_sol_om         Climatology aerosol field
 !> @param[in]     cor_sol_ss         Climatology aerosol field
-!> @param[in]     cor_sol_du         Climatology aerosol field
 !> @param[in]     n_ait_ins          Climatology aerosol field
 !> @param[in]     ait_ins_bc         Climatology aerosol field
 !> @param[in]     ait_ins_om         Climatology aerosol field
@@ -176,12 +170,10 @@ contains
 !> @param[in]     pvol_bc_acc_sol    Partial volume (Acc_Sol black carbon)
 !> @param[in]     pvol_om_acc_sol    Partial volume (Acc_Sol organic matter)
 !> @param[in]     pvol_ss_acc_sol    Partial volume (Acc_Sol sea salt)
-!> @param[in]     pvol_du_acc_sol    Partial volume (Acc_Sol dust)
 !> @param[in]     pvol_su_cor_sol    Partial volume (Cor_Sol h2so4)
 !> @param[in]     pvol_bc_cor_sol    Partial volume (Cor_Sol black carbon)
 !> @param[in]     pvol_om_cor_sol    Partial volume (Cor_Sol organic matter)
 !> @param[in]     pvol_ss_cor_sol    Partial volume (Cor_Sol sea salt)
-!> @param[in]     pvol_du_cor_sol    Partial volume (Cor_Sol dust)
 !> @param[in]     pvol_bc_ait_ins    Partial volume (Ait_Ins black carbon)
 !> @param[in]     pvol_om_ait_ins    Partial volume (Ait_Ins organic matter)
 !> @param[in]     pvol_du_acc_ins    Partial volume (Acc_Ins dust)
@@ -226,13 +218,11 @@ subroutine radaer_code( nlayers,                                               &
                         acc_sol_bc,                                            &
                         acc_sol_om,                                            &
                         acc_sol_ss,                                            &
-                        acc_sol_du,                                            &
                         n_cor_sol,                                             &
                         cor_sol_su,                                            &
                         cor_sol_bc,                                            &
                         cor_sol_om,                                            &
                         cor_sol_ss,                                            &
-                        cor_sol_du,                                            &
                         n_ait_ins,                                             &
                         ait_ins_bc,                                            &
                         ait_ins_om,                                            &
@@ -265,12 +255,10 @@ subroutine radaer_code( nlayers,                                               &
                         pvol_bc_acc_sol,                                       &
                         pvol_om_acc_sol,                                       &
                         pvol_ss_acc_sol,                                       &
-                        pvol_du_acc_sol,                                       &
                         pvol_su_cor_sol,                                       &
                         pvol_bc_cor_sol,                                       &
                         pvol_om_cor_sol,                                       &
                         pvol_ss_cor_sol,                                       &
-                        pvol_du_cor_sol,                                       &
                         pvol_bc_ait_ins,                                       &
                         pvol_om_ait_ins,                                       &
                         pvol_du_acc_ins,                                       &
@@ -361,13 +349,11 @@ subroutine radaer_code( nlayers,                                               &
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: acc_sol_bc
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: acc_sol_om
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: acc_sol_ss
-  real(kind=r_def), intent(in),    dimension(undf_wth)   :: acc_sol_du
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: n_cor_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: cor_sol_su
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: cor_sol_bc
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: cor_sol_om
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: cor_sol_ss
-  real(kind=r_def), intent(in),    dimension(undf_wth)   :: cor_sol_du
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: n_ait_ins
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: ait_ins_bc
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: ait_ins_om
@@ -400,12 +386,10 @@ subroutine radaer_code( nlayers,                                               &
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_bc_acc_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_om_acc_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_ss_acc_sol
-  real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_du_acc_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_su_cor_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_bc_cor_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_om_cor_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_ss_cor_sol
-  real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_du_cor_sol
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_bc_ait_ins
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_om_ait_ins
   real(kind=r_def), intent(in),    dimension(undf_wth)   :: pvol_du_acc_ins
@@ -593,12 +577,12 @@ subroutine radaer_code( nlayers,                                               &
     ukca_comp_vol_um(5, 1,k) = pvol_bc_acc_sol(map_wth(1) + k)
     ukca_comp_vol_um(6, 1,k) = pvol_om_acc_sol(map_wth(1) + k)
     ukca_comp_vol_um(7, 1,k) = pvol_ss_acc_sol(map_wth(1) + k)
-    ukca_comp_vol_um(8, 1,k) = pvol_du_acc_sol(map_wth(1) + k)
+    ukca_comp_vol_um(8, 1,k) = 0.0_r_um ! no pvol_du_acc_sol prognostic
     ukca_comp_vol_um(9, 1,k) = pvol_su_cor_sol(map_wth(1) + k)
     ukca_comp_vol_um(10,1,k) = pvol_bc_cor_sol(map_wth(1) + k)
     ukca_comp_vol_um(11,1,k) = pvol_om_cor_sol(map_wth(1) + k)
     ukca_comp_vol_um(12,1,k) = pvol_ss_cor_sol(map_wth(1) + k)
-    ukca_comp_vol_um(13,1,k) = pvol_du_cor_sol(map_wth(1) + k)
+    ukca_comp_vol_um(13,1,k) = 0.0_r_um ! no pvol_du_cor_sol prognostic
     ukca_comp_vol_um(14,1,k) = pvol_bc_ait_ins(map_wth(1) + k)
     ukca_comp_vol_um(15,1,k) = pvol_om_ait_ins(map_wth(1) + k)
     ukca_comp_vol_um(16,1,k) = pvol_du_acc_ins(map_wth(1) + k)
@@ -611,12 +595,12 @@ subroutine radaer_code( nlayers,                                               &
     ukca_mix_ratio_um(5, 1,k) = acc_sol_bc(map_wth(1) + k)
     ukca_mix_ratio_um(6, 1,k) = acc_sol_om(map_wth(1) + k)
     ukca_mix_ratio_um(7, 1,k) = acc_sol_ss(map_wth(1) + k)
-    ukca_mix_ratio_um(8, 1,k) = acc_sol_du(map_wth(1) + k)
+    ukca_mix_ratio_um(8, 1,k) = 0.0_r_um ! no acc_sol_du prognostic
     ukca_mix_ratio_um(9, 1,k) = cor_sol_su(map_wth(1) + k)
     ukca_mix_ratio_um(10,1,k) = cor_sol_bc(map_wth(1) + k)
     ukca_mix_ratio_um(11,1,k) = cor_sol_om(map_wth(1) + k)
     ukca_mix_ratio_um(12,1,k) = cor_sol_ss(map_wth(1) + k)
-    ukca_mix_ratio_um(13,1,k) = cor_sol_du(map_wth(1) + k)
+    ukca_mix_ratio_um(13,1,k) = 0.0_r_um ! no cor_sol_du prognostic
     ukca_mix_ratio_um(14,1,k) = ait_ins_bc(map_wth(1) + k)
     ukca_mix_ratio_um(15,1,k) = ait_ins_om(map_wth(1) + k)
     ukca_mix_ratio_um(16,1,k) = acc_ins_du(map_wth(1) + k)
@@ -652,15 +636,15 @@ subroutine radaer_code( nlayers,                                               &
                                               pvol_su_acc_sol( map_wth(1) + k)+&
                                               pvol_bc_acc_sol( map_wth(1) + k)+&
                                               pvol_om_acc_sol( map_wth(1) + k)+&
-                                              pvol_ss_acc_sol( map_wth(1) + k)+&
-                                              pvol_du_acc_sol( map_wth(1) + k)
+                                              pvol_ss_acc_sol( map_wth(1) + k)
+                                              ! add pvol_du_acc_sol if used
 
     ukca_modal_vol_um(1,k,(mode_cor_sol-1)) = pvol_wat_cor_sol(map_wth(1) + k)+&
                                               pvol_su_cor_sol( map_wth(1) + k)+&
                                               pvol_bc_cor_sol( map_wth(1) + k)+&
                                               pvol_om_cor_sol( map_wth(1) + k)+&
-                                              pvol_ss_cor_sol( map_wth(1) + k)+&
-                                              pvol_du_cor_sol( map_wth(1) + k)
+                                              pvol_ss_cor_sol( map_wth(1) + k)
+                                              ! add pvol_du_cor_sol if used
 
     ukca_modal_vol_um(1,k,(mode_ait_insol-1))=pvol_bc_ait_ins( map_wth(1) + k)+&
                                               pvol_om_ait_ins( map_wth(1) + k)

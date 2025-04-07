@@ -21,6 +21,7 @@ module init_surface_fields_alg_mod
                                        internal_flux_value, &
                                        surf_temp_forcing, &
                                        surf_temp_forcing_int_flux
+  use jules_surface_config_mod,       only : l_urban2t
 
   implicit none
 
@@ -165,19 +166,21 @@ contains
          ancil_option == ancil_option_none) then
 
       call surface_fields%get_field('z0msea', z0msea)
-      call surface_fields%get_field('urbwrr', urbwrr)
-      call surface_fields%get_field('urbhwr', urbhwr)
-      call surface_fields%get_field('urbhgt', urbhgt)
-      call surface_fields%get_field('urbztm', urbztm)
-      call surface_fields%get_field('urbdisp', urbdisp)
-      call surface_fields%get_field('urbalbwl', urbalbwl)
-      call surface_fields%get_field('urbalbrd', urbalbrd)
-      call surface_fields%get_field('urbemisw', urbemisw)
-      call surface_fields%get_field('urbemisr', urbemisr)
-
-      call invoke(                                                            &
+      call invoke( setval_c(z0msea,              1.5e-4_r_def) )
                  ! Set sea surface prognostics when no um2lfric dump
-                 setval_c(z0msea,              1.5e-4_r_def),                 &
+
+      if (l_urban2t) then
+        call surface_fields%get_field('urbwrr', urbwrr)
+        call surface_fields%get_field('urbhwr', urbhwr)
+        call surface_fields%get_field('urbhgt', urbhgt)
+        call surface_fields%get_field('urbztm', urbztm)
+        call surface_fields%get_field('urbdisp', urbdisp)
+        call surface_fields%get_field('urbalbwl', urbalbwl)
+        call surface_fields%get_field('urbalbrd', urbalbrd)
+        call surface_fields%get_field('urbemisw', urbemisw)
+        call surface_fields%get_field('urbemisr', urbemisr)
+
+        call invoke(                                                          &
                  ! Ancillary fields for use if no ancil read
                  setval_c(urbwrr,              0.5_r_def),                    &
                  setval_c(urbhwr,              1.0_r_def),                    &
@@ -189,6 +192,7 @@ contains
                  setval_c(urbalbrd,            0.08_r_def),                   &
                  setval_c(urbemisw,            0.875_r_def),                  &
                  setval_c(urbemisr,            0.95_r_def) )
+      end if
 
     end if
 

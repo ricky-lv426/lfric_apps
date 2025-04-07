@@ -35,7 +35,7 @@ private
 
 type, public, extends(kernel_type) :: glomap_aerosol_kernel_type
   private
-  type(arg_type) :: meta_args(70) = (/                &
+  type(arg_type) :: meta_args(66) = (/                &
        arg_type(GH_SCALAR, GH_LOGICAL, GH_READ),      & ! rad_this_tstep
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! theta_in_wth
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! exner_in_wth
@@ -56,13 +56,11 @@ type, public, extends(kernel_type) :: glomap_aerosol_kernel_type
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_bc
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_om
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_ss
-       arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! acc_sol_du
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! n_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_su
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_bc
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_om
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_ss
-       arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! cor_sol_du
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! n_ait_ins
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! ait_ins_bc
        arg_type(GH_FIELD, GH_REAL, GH_READ,  WTHETA), & ! ait_ins_om
@@ -95,12 +93,10 @@ type, public, extends(kernel_type) :: glomap_aerosol_kernel_type
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_bc_acc_sol
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_om_acc_sol
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_ss_acc_sol
-       arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_du_acc_sol
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_su_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_bc_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_om_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_ss_cor_sol
-       arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_du_cor_sol
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_bc_ait_ins
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_om_ait_ins
        arg_type(GH_FIELD, GH_REAL, GH_WRITE, WTHETA), & ! pvol_du_acc_ins
@@ -139,13 +135,11 @@ contains
 !> @param[in]     acc_sol_bc          Climatology aerosol field
 !> @param[in]     acc_sol_om          Climatology aerosol field
 !> @param[in]     acc_sol_ss          Climatology aerosol field
-!> @param[in]     acc_sol_du          Climatology aerosol field
 !> @param[in]     n_cor_sol           Climatology aerosol field
 !> @param[in]     cor_sol_su          Climatology aerosol field
 !> @param[in]     cor_sol_bc          Climatology aerosol field
 !> @param[in]     cor_sol_om          Climatology aerosol field
 !> @param[in]     cor_sol_ss          Climatology aerosol field
-!> @param[in]     cor_sol_du          Climatology aerosol field
 !> @param[in]     n_ait_ins           Climatology aerosol field
 !> @param[in]     ait_ins_bc          Climatology aerosol field
 !> @param[in]     ait_ins_om          Climatology aerosol field
@@ -178,12 +172,10 @@ contains
 !> @param[in,out] pvol_bc_acc_sol     Partial volume (Acc_Sol black carbon)
 !> @param[in,out] pvol_om_acc_sol     Partial volume (Acc_Sol organic matter)
 !> @param[in,out] pvol_ss_acc_sol     Partial volume (Acc_Sol sea salt)
-!> @param[in,out] pvol_du_acc_sol     Partial volume (Acc_Sol dust)
 !> @param[in,out] pvol_su_cor_sol     Partial volume (Cor_Sol h2so4)
 !> @param[in,out] pvol_bc_cor_sol     Partial volume (Cor_Sol black carbon)
 !> @param[in,out] pvol_om_cor_sol     Partial volume (Cor_Sol organic matter)
 !> @param[in,out] pvol_ss_cor_sol     Partial volume (Cor_Sol sea salt)
-!> @param[in,out] pvol_du_cor_sol     Partial volume (Cor_Sol dust)
 !> @param[in,out] pvol_bc_ait_ins     Partial volume (Ait_Ins black carbon)
 !> @param[in,out] pvol_om_ait_ins     Partial volume (Ait_Ins organic matter)
 !> @param[in,out] pvol_du_acc_ins     Partial volume (Acc_Ins dust)
@@ -218,13 +210,11 @@ subroutine glomap_aerosol_code( nlayers,                                       &
                                 acc_sol_bc,                                    &
                                 acc_sol_om,                                    &
                                 acc_sol_ss,                                    &
-                                acc_sol_du,                                    &
                                 n_cor_sol,                                     &
                                 cor_sol_su,                                    &
                                 cor_sol_bc,                                    &
                                 cor_sol_om,                                    &
                                 cor_sol_ss,                                    &
-                                cor_sol_du,                                    &
                                 n_ait_ins,                                     &
                                 ait_ins_bc,                                    &
                                 ait_ins_om,                                    &
@@ -257,12 +247,10 @@ subroutine glomap_aerosol_code( nlayers,                                       &
                                 pvol_bc_acc_sol,                               &
                                 pvol_om_acc_sol,                               &
                                 pvol_ss_acc_sol,                               &
-                                pvol_du_acc_sol,                               &
                                 pvol_su_cor_sol,                               &
                                 pvol_bc_cor_sol,                               &
                                 pvol_om_cor_sol,                               &
                                 pvol_ss_cor_sol,                               &
-                                pvol_du_cor_sol,                               &
                                 pvol_bc_ait_ins,                               &
                                 pvol_om_ait_ins,                               &
                                 pvol_du_acc_ins,                               &
@@ -270,7 +258,8 @@ subroutine glomap_aerosol_code( nlayers,                                       &
                                 cloud_drop_no_conc,                            &
                                 ndf_wth, undf_wth, map_wth )
 
-  use aerosol_config_mod,                 only: l_radaer
+  use aerosol_config_mod,                 only: l_radaer, glomap_mode, &
+                                                glomap_mode_ukca
   use constants_mod,                      only: r_def, i_def, r_um, i_um, l_def
 
   !---------------------------------------
@@ -321,13 +310,11 @@ subroutine glomap_aerosol_code( nlayers,                                       &
   real(kind=r_def), intent(in),  dimension(undf_wth) :: acc_sol_bc
   real(kind=r_def), intent(in),  dimension(undf_wth) :: acc_sol_om
   real(kind=r_def), intent(in),  dimension(undf_wth) :: acc_sol_ss
-  real(kind=r_def), intent(in),  dimension(undf_wth) :: acc_sol_du
   real(kind=r_def), intent(in),  dimension(undf_wth) :: n_cor_sol
   real(kind=r_def), intent(in),  dimension(undf_wth) :: cor_sol_su
   real(kind=r_def), intent(in),  dimension(undf_wth) :: cor_sol_bc
   real(kind=r_def), intent(in),  dimension(undf_wth) :: cor_sol_om
   real(kind=r_def), intent(in),  dimension(undf_wth) :: cor_sol_ss
-  real(kind=r_def), intent(in),  dimension(undf_wth) :: cor_sol_du
   real(kind=r_def), intent(in),  dimension(undf_wth) :: n_ait_ins
   real(kind=r_def), intent(in),  dimension(undf_wth) :: ait_ins_bc
   real(kind=r_def), intent(in),  dimension(undf_wth) :: ait_ins_om
@@ -360,12 +347,10 @@ subroutine glomap_aerosol_code( nlayers,                                       &
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_bc_acc_sol
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_om_acc_sol
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_ss_acc_sol
-  real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_du_acc_sol
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_su_cor_sol
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_bc_cor_sol
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_om_cor_sol
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_ss_cor_sol
-  real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_du_cor_sol
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_bc_ait_ins
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_om_ait_ins
   real(kind=r_def), intent(inout), dimension(undf_wth) :: pvol_du_acc_ins
@@ -457,10 +442,21 @@ subroutine glomap_aerosol_code( nlayers,                                       &
   end do
 
   ! note - zeroth level is redundant for these fields in UM
+  ! Nucleation mode only used for full UKCA, not climatologies
+  if (glomap_mode == glomap_mode_ukca) then
+    do k = 1, nlayers
+      n_nuc_sol_um(k)  = n_nuc_sol( map_wth(1) + k)
+      nuc_sol_su_um(k) = nuc_sol_su(map_wth(1) + k)
+      nuc_sol_om_um(k) = nuc_sol_om(map_wth(1) + k)
+    end do
+  else
+    do k = 1, nlayers
+      n_nuc_sol_um(k)  = 0.0_r_um
+      nuc_sol_su_um(k) = 0.0_r_um
+      nuc_sol_om_um(k) = 0.0_r_um
+    end do
+  end if
   do k = 1, nlayers
-    n_nuc_sol_um(k)  = n_nuc_sol( map_wth(1) + k)
-    nuc_sol_su_um(k) = nuc_sol_su(map_wth(1) + k)
-    nuc_sol_om_um(k) = nuc_sol_om(map_wth(1) + k)
     n_ait_sol_um(k)  = n_ait_sol( map_wth(1) + k)
     ait_sol_su_um(k) = ait_sol_su(map_wth(1) + k)
     ait_sol_bc_um(k) = ait_sol_bc(map_wth(1) + k)
@@ -470,13 +466,13 @@ subroutine glomap_aerosol_code( nlayers,                                       &
     acc_sol_bc_um(k) = acc_sol_bc(map_wth(1) + k)
     acc_sol_om_um(k) = acc_sol_om(map_wth(1) + k)
     acc_sol_ss_um(k) = acc_sol_ss(map_wth(1) + k)
-    acc_sol_du_um(k) = acc_sol_du(map_wth(1) + k)
+    acc_sol_du_um(k) = 0.0_r_um ! no prognostic, always zero
     n_cor_sol_um(k)  = n_cor_sol( map_wth(1) + k)
     cor_sol_su_um(k) = cor_sol_su(map_wth(1) + k)
     cor_sol_bc_um(k) = cor_sol_bc(map_wth(1) + k)
     cor_sol_om_um(k) = cor_sol_om(map_wth(1) + k)
     cor_sol_ss_um(k) = cor_sol_ss(map_wth(1) + k)
-    cor_sol_du_um(k) = cor_sol_du(map_wth(1) + k)
+    cor_sol_du_um(k) = 0.0_r_um ! no prognostic, always zero
     n_ait_ins_um(k)  = n_ait_ins( map_wth(1) + k)
     ait_ins_bc_um(k) = ait_ins_bc(map_wth(1) + k)
     ait_ins_om_um(k) = ait_ins_om(map_wth(1) + k)
@@ -559,12 +555,12 @@ subroutine glomap_aerosol_code( nlayers,                                       &
       pvol_bc_acc_sol(map_wth(1) + k)  = pvol(     k, mode_acc_sol,   cp_bc )
       pvol_om_acc_sol(map_wth(1) + k)  = pvol(     k, mode_acc_sol,   cp_oc )
       pvol_ss_acc_sol(map_wth(1) + k)  = pvol(     k, mode_acc_sol,   cp_cl )
-      pvol_du_acc_sol(map_wth(1) + k)  = pvol(     k, mode_acc_sol,   cp_du )
+!     pvol_du_acc_sol would update here from cp_du if used
       pvol_su_cor_sol(map_wth(1) + k)  = pvol(     k, mode_cor_sol,   cp_su )
       pvol_bc_cor_sol(map_wth(1) + k)  = pvol(     k, mode_cor_sol,   cp_bc )
       pvol_om_cor_sol(map_wth(1) + k)  = pvol(     k, mode_cor_sol,   cp_oc )
       pvol_ss_cor_sol(map_wth(1) + k)  = pvol(     k, mode_cor_sol,   cp_cl )
-      pvol_du_cor_sol(map_wth(1) + k)  = pvol(     k, mode_cor_sol,   cp_du )
+!     pvol_du_cor_sol would update here from cp_du if used
       pvol_bc_ait_ins(map_wth(1) + k)  = pvol(     k, mode_ait_insol, cp_bc )
       pvol_om_ait_ins(map_wth(1) + k)  = pvol(     k, mode_ait_insol, cp_oc )
       pvol_du_acc_ins(map_wth(1) + k)  = pvol(     k, mode_acc_insol, cp_du )
@@ -598,12 +594,12 @@ subroutine glomap_aerosol_code( nlayers,                                       &
     pvol_bc_acc_sol(map_wth(1) + 0)  = pvol(     1, mode_acc_sol,   cp_bc )
     pvol_om_acc_sol(map_wth(1) + 0)  = pvol(     1, mode_acc_sol,   cp_oc )
     pvol_ss_acc_sol(map_wth(1) + 0)  = pvol(     1, mode_acc_sol,   cp_cl )
-    pvol_du_acc_sol(map_wth(1) + 0)  = pvol(     1, mode_acc_sol,   cp_du )
+!   pvol_du_acc_sol would update here if used
     pvol_su_cor_sol(map_wth(1) + 0)  = pvol(     1, mode_cor_sol,   cp_su )
     pvol_bc_cor_sol(map_wth(1) + 0)  = pvol(     1, mode_cor_sol,   cp_bc )
     pvol_om_cor_sol(map_wth(1) + 0)  = pvol(     1, mode_cor_sol,   cp_oc )
     pvol_ss_cor_sol(map_wth(1) + 0)  = pvol(     1, mode_cor_sol,   cp_cl )
-    pvol_du_cor_sol(map_wth(1) + 0)  = pvol(     1, mode_cor_sol,   cp_du )
+!   pvol_du_cor_sol would update here if used
     pvol_bc_ait_ins(map_wth(1) + 0)  = pvol(     1, mode_ait_insol, cp_bc )
     pvol_om_ait_ins(map_wth(1) + 0)  = pvol(     1, mode_ait_insol, cp_oc )
     pvol_du_acc_ins(map_wth(1) + 0)  = pvol(     1, mode_acc_insol, cp_du )

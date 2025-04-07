@@ -52,7 +52,11 @@ module gungho_init_fields_mod
                                                  lbc_option_analytic,         &
                                                  lbc_option_gungho_file,      &
                                                  lbc_option_um2lfric_file,    &
-                                                 zero_w2v_wind
+                                                 zero_w2v_wind,               &
+                                                 sst_source,                  &
+                                                 sst_source_start_dump,       &
+                                                 snow_source,                 &
+                                                 snow_source_surf
   use io_config_mod,                      only : checkpoint_read,  &
                                                  checkpoint_write, &
                                                  write_dump
@@ -715,6 +719,12 @@ subroutine create_model_data( modeldb,      &
                                                      n_cor_ins, cor_ins_du, &
                                                      dust1_mmr, dust2_mmr,  &
                                                      rhop, rgas ) )
+
+            call fd_fields%remove_field("dust1_mmr")
+            call depository%remove_field("dust1_mmr")
+            call fd_fields%remove_field("dust2_mmr")
+            call depository%remove_field("dust2_mmr")
+
           end if
 #endif
         else
@@ -864,6 +874,36 @@ subroutine create_model_data( modeldb,      &
             call depository%remove_field("land_tile_fraction")
             call ancil_fields%remove_field("stdev_topog_index")
             call depository%remove_field("stdev_topog_index")
+            call ancil_fields%remove_field("grad_x_orog")
+            call depository%remove_field("grad_x_orog")
+            call ancil_fields%remove_field("grad_y_orog")
+            call depository%remove_field("grad_y_orog")
+          end if
+          if (ancil_option == ancil_option_fixed) then
+            if (sst_source /= sst_source_start_dump) then
+              call ancil_fields%remove_field("tstar_sea")
+              call depository%remove_field("tstar_sea")
+            end if
+            if (.not. l_esm_couple) then
+              call ancil_fields%remove_field("sea_ice_fraction")
+              call depository%remove_field("sea_ice_fraction")
+            end if
+            ! Time axes are no longer needed
+            call model_axes%ancil_times_list%clear()
+          end if
+          if ( snow_source == snow_source_surf ) then
+            call ancil_fields%remove_field("tile_snow_rgrain_in")
+            call depository%remove_field("tile_snow_rgrain_in")
+            call ancil_fields%remove_field("tile_snow_mass_in")
+            call depository%remove_field("tile_snow_mass_in")
+            call ancil_fields%remove_field("snow_under_canopy_in")
+            call depository%remove_field("snow_under_canopy_in")
+            call ancil_fields%remove_field("snow_depth_in")
+            call depository%remove_field("snow_depth_in")
+            call ancil_fields%remove_field("snowpack_density_in")
+            call depository%remove_field("snowpack_density_in")
+            call ancil_fields%remove_field("n_snow_layers_in")
+            call depository%remove_field("n_snow_layers_in")
           end if
 
         case ( ancil_option_idealised )

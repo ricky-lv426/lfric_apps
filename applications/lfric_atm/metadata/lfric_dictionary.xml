@@ -186,13 +186,11 @@
   <field id="acc_sol_bc" name="acc_sol_bc" long_name="accumulation_soluble_mode_black_carbon_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="acc_sol_om" name="acc_sol_om" long_name="accumulation_soluble_mode_organic_matter_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="acc_sol_ss" name="acc_sol_ss" long_name="accumulation_soluble_mode_sea_salt_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
-  <field id="acc_sol_du" name="acc_sol_du" long_name="accumulation_soluble_dust_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="n_cor_sol" name="n_cor_sol" long_name="coarse_soluble_mode_number" unit="1" grid_ref="var_full_face_grid" />
   <field id="cor_sol_su" name="cor_sol_su" long_name="coarse_soluble_mode_h2so4_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="cor_sol_bc" name="cor_sol_bc" long_name="coarse_soluble_mode_black_carbon_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="cor_sol_om" name="cor_sol_om" long_name="coarse_soluble_mode_organic_matter_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="cor_sol_ss" name="cor_sol_ss" long_name="coarse_soluble_mode_sea_salt_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
-  <field id="cor_sol_du" name="cor_sol_du" long_name="coarse_soluble_mode_dust_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="n_ait_ins" name="n_ait_ins" long_name="aitken_insoluble_mode_number" unit="1" grid_ref="var_full_face_grid" />
   <field id="ait_ins_bc" name="ait_ins_bc" long_name="aitken_insoluble_mode_black_carbon_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
   <field id="ait_ins_om" name="ait_ins_om" long_name="aitken_insoluble_mode_organic_matter_mmr" unit="kg kg-1" grid_ref="var_full_face_grid" />
@@ -226,12 +224,10 @@
   <field id="pvol_bc_acc_sol" name="pvol_bc_acc_sol" long_name="partial_volume_of_black_carbon_in_accumulation_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_om_acc_sol" name="pvol_om_acc_sol" long_name="partial_volume_of_organic_matter_in_accumulation_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_ss_acc_sol" name="pvol_ss_acc_sol" long_name="partial_volume_of_sea_salt_in_accumulation_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
-  <field id="pvol_du_acc_sol" name="pvol_du_acc_sol" long_name="partial_volume_of_dust_in_accumulation_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_su_cor_sol" name="pvol_su_cor_sol" long_name="partial_volume_of_h2so4_in_coarse_soluble_mode_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_bc_cor_sol" name="pvol_bc_cor_sol" long_name="partial_volume_of_black_carbon_in_coarse_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_om_cor_sol" name="pvol_om_cor_sol" long_name="partial_volume_of_organic_matter_in_coarse_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_ss_cor_sol" name="pvol_ss_cor_sol" long_name="partial_volume_of_sea_salt_in_coarse_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
-  <field id="pvol_du_cor_sol" name="pvol_du_cor_sol" long_name="partial_volume_of_dust_in_coarse_soluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_bc_ait_ins" name="pvol_bc_ait_ins" long_name="partial_volume_of_black_carbon_in_aitken_insoluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_om_ait_ins" name="pvol_om_ait_ins" long_name="partial_volume_of_organic_matter_in_aitken_insoluble_mode" unit="m3" grid_ref="var_full_face_grid" />
   <field id="pvol_du_acc_ins" name="pvol_du_acc_ins" long_name="partial_volume_of_dust_in_accumulation_insoluble_mode" unit="m3" grid_ref="var_full_face_grid" />

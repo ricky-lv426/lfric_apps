@@ -86,13 +86,11 @@ contains
     type( field_type ), pointer :: acc_sol_bc => null()
     type( field_type ), pointer :: acc_sol_om => null()
     type( field_type ), pointer :: acc_sol_ss => null()
-    type( field_type ), pointer :: acc_sol_du => null()
     type( field_type ), pointer :: n_cor_sol => null()
     type( field_type ), pointer :: cor_sol_su => null()
     type( field_type ), pointer :: cor_sol_bc => null()
     type( field_type ), pointer :: cor_sol_om => null()
     type( field_type ), pointer :: cor_sol_ss => null()
-    type( field_type ), pointer :: cor_sol_du => null()
     type( field_type ), pointer :: n_ait_ins => null()
     type( field_type ), pointer :: ait_ins_bc => null()
     type( field_type ), pointer :: ait_ins_om => null()
@@ -125,12 +123,10 @@ contains
     type( field_type ), pointer :: pvol_bc_acc_sol => null()
     type( field_type ), pointer :: pvol_om_acc_sol => null()
     type( field_type ), pointer :: pvol_ss_acc_sol => null()
-    type( field_type ), pointer :: pvol_du_acc_sol => null()
     type( field_type ), pointer :: pvol_su_cor_sol => null()
     type( field_type ), pointer :: pvol_bc_cor_sol => null()
     type( field_type ), pointer :: pvol_om_cor_sol => null()
     type( field_type ), pointer :: pvol_ss_cor_sol => null()
-    type( field_type ), pointer :: pvol_du_cor_sol => null()
     type( field_type ), pointer :: pvol_bc_ait_ins => null()
     type( field_type ), pointer :: pvol_om_ait_ins => null()
     type( field_type ), pointer :: pvol_du_acc_ins => null()
@@ -164,13 +160,11 @@ contains
     call aerosol_fields%get_field('acc_sol_bc', acc_sol_bc)
     call aerosol_fields%get_field('acc_sol_om', acc_sol_om)
     call aerosol_fields%get_field('acc_sol_ss', acc_sol_ss)
-    call aerosol_fields%get_field('acc_sol_du', acc_sol_du)
     call aerosol_fields%get_field('n_cor_sol', n_cor_sol)
     call aerosol_fields%get_field('cor_sol_su', cor_sol_su)
     call aerosol_fields%get_field('cor_sol_bc', cor_sol_bc)
     call aerosol_fields%get_field('cor_sol_om', cor_sol_om)
     call aerosol_fields%get_field('cor_sol_ss', cor_sol_ss)
-    call aerosol_fields%get_field('cor_sol_du', cor_sol_du)
     call aerosol_fields%get_field('n_ait_ins', n_ait_ins)
     call aerosol_fields%get_field('ait_ins_bc', ait_ins_bc)
     call aerosol_fields%get_field('ait_ins_om', ait_ins_om)
@@ -203,12 +197,10 @@ contains
     call aerosol_fields%get_field('pvol_bc_acc_sol', pvol_bc_acc_sol)
     call aerosol_fields%get_field('pvol_om_acc_sol', pvol_om_acc_sol)
     call aerosol_fields%get_field('pvol_ss_acc_sol', pvol_ss_acc_sol)
-    call aerosol_fields%get_field('pvol_du_acc_sol', pvol_du_acc_sol)
     call aerosol_fields%get_field('pvol_su_cor_sol', pvol_su_cor_sol)
     call aerosol_fields%get_field('pvol_bc_cor_sol', pvol_bc_cor_sol)
     call aerosol_fields%get_field('pvol_om_cor_sol', pvol_om_cor_sol)
     call aerosol_fields%get_field('pvol_ss_cor_sol', pvol_ss_cor_sol)
-    call aerosol_fields%get_field('pvol_du_cor_sol', pvol_du_cor_sol)
     call aerosol_fields%get_field('pvol_bc_ait_ins', pvol_bc_ait_ins)
     call aerosol_fields%get_field('pvol_om_ait_ins', pvol_om_ait_ins)
     call aerosol_fields%get_field('pvol_du_acc_ins', pvol_du_acc_ins)
@@ -282,13 +274,11 @@ contains
                                             acc_sol_bc,                        &
                                             acc_sol_om,                        &
                                             acc_sol_ss,                        &
-                                            acc_sol_du,                        &
                                             n_cor_sol,                         &
                                             cor_sol_su,                        &
                                             cor_sol_bc,                        &
                                             cor_sol_om,                        &
                                             cor_sol_ss,                        &
-                                            cor_sol_du,                        &
                                             n_ait_ins,                         &
                                             ait_ins_bc,                        &
                                             ait_ins_om,                        &
@@ -321,12 +311,10 @@ contains
                                             pvol_bc_acc_sol,                   &
                                             pvol_om_acc_sol,                   &
                                             pvol_ss_acc_sol,                   &
-                                            pvol_du_acc_sol,                   &
                                             pvol_su_cor_sol,                   &
                                             pvol_bc_cor_sol,                   &
                                             pvol_om_cor_sol,                   &
                                             pvol_ss_cor_sol,                   &
-                                            pvol_du_cor_sol,                   &
                                             pvol_bc_ait_ins,                   &
                                             pvol_om_ait_ins,                   &
                                             pvol_du_acc_ins,                   &
@@ -353,13 +341,11 @@ contains
       call acc_sol_bc%write_field('aerosol__acc_sol_bc')
       call acc_sol_om%write_field('aerosol__acc_sol_om')
       call acc_sol_ss%write_field('aerosol__acc_sol_ss')
-      call acc_sol_du%write_field('aerosol__acc_sol_du')
       call n_cor_sol%write_field('aerosol__n_cor_sol')
       call cor_sol_su%write_field('aerosol__cor_sol_su')
       call cor_sol_bc%write_field('aerosol__cor_sol_bc')
       call cor_sol_om%write_field('aerosol__cor_sol_om')
       call cor_sol_ss%write_field('aerosol__cor_sol_ss')
-      call cor_sol_du%write_field('aerosol__cor_sol_du')
       call n_ait_ins%write_field('aerosol__n_ait_ins')
       call ait_ins_bc%write_field('aerosol__ait_ins_bc')
       call ait_ins_om%write_field('aerosol__ait_ins_om')

@@ -59,8 +59,6 @@ contains
   !>             as documented in UMDP24
   !>         NB This version uses winds in w3 space (i.e. A-grid)
   !>@param[in]     modeldb           Holds the model state
-  !>@param[in,out] visc_m            Smag diffusion coefficient for momentum
-  !>@param[in,out] visc_h            Smag diffusion coefficient for scalars
   !>@param[in]     theta             Theta in its native (wth) space
   !>@param[in]     rho               Dry density in its native (w3) space
   !>@param[in]     exner             Exner Pressure in the w3 space
@@ -78,7 +76,7 @@ contains
   !>@param[in]     snow_fields         (in,out) Fields for snow scheme
   !>@param[in]     aerosol_fields      Fields for aerosol scheme
   !>@param[in]     model_clock         Time in the model
-  subroutine bl_exp_alg(modeldb, visc_m, visc_h, theta, rho, exner, mr_n, &
+  subroutine bl_exp_alg(modeldb, theta, rho, exner, mr_n,                 &
                         derived_fields, radiation_fields,                 &
                         microphysics_fields, dmr_mphys, orography_fields, &
                         turbulence_fields, convection_fields,             &
@@ -95,7 +93,6 @@ contains
     implicit none
 
     type( modeldb_type ), intent(in), target :: modeldb
-    type( field_type ), intent( inout )     :: visc_m, visc_h
 
     type( field_type ), intent( in )        :: theta, rho, exner, mr_n(nummr)
     type( field_type ), intent( in )        :: dmr_mphys ( nummr )
@@ -125,6 +122,8 @@ contains
     type( field_type ), pointer :: w_in_wth      => null()
     type( field_type ), pointer :: velocity_w2v  => null()
     type( field_type ), pointer :: shear         => null()
+    type( field_type ), pointer :: visc_h
+    type( field_type ), pointer :: visc_m
     type( field_type ), pointer :: u_physics     => null()
     type( field_type ), pointer :: sea_u_current_ptr => null()
     type( field_type ), pointer :: sea_v_current_ptr => null()
@@ -335,6 +334,8 @@ contains
     call derived_fields%get_field('w_in_wth', w_in_wth)
     call derived_fields%get_field('velocity_w2v', velocity_w2v)
     call derived_fields%get_field('shear', shear)
+    call derived_fields%get_field('visc_h', visc_h)
+    call derived_fields%get_field('visc_m', visc_m)
     call derived_fields%get_field('u_physics', u_physics)
 
     ! Unpack turbulence fields

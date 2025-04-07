@@ -34,7 +34,8 @@ module cld_diags_mod
   private
 
   ! Logical indicating whether diagnostics are requested
-  logical( l_def ) :: cld_amount_max_flag,                                     &
+  logical( l_def ) :: sskew_bm_flag, svar_bm_flag, svar_tb_flag,               &
+                      cld_amount_max_flag,                                     &
                       cld_amount_rnd_flag,                                     &
                       cld_amount_maxrnd_flag,                                  &
                       ceil_cld_amount_maxrnd_flag,                             &
@@ -56,46 +57,94 @@ module cld_diags_mod
 contains
 
   !> @brief Initialise fields for computing diagnostics
-  subroutine initialise_diags_for_cld( cld_amount_max,                         &
-                                       cld_amount_rnd,                         &
-                                       cld_amount_maxrnd,                      &
-                                       ceil_cld_amount_maxrnd,                 &
-                                       cld_base_altitude,                      &
-                                       low_cld_base_altitude,                  &
-                                       very_low_cld_amount,                    &
-                                       low_cld_amount,                         &
-                                       medium_cld_amount,                      &
-                                       high_cld_amount,                        &
-                                       very_high_cld_amount,                   &
-                                       combined_cld_amount,                    &
-                                       icing_sfip_li_bcf,                      &
-                                       icing_sfip_lir_com,                     &
-                                       cloud_fraction_below_1000feet_asl,      &
-                                       cf_area, zh )
+  subroutine initialise_diags_for_cld( sskew_bm, svar_bm, svar_tb, call_b4_conv )
 
     implicit none
 
     ! Diagnostic fields to initialise
-    type( field_type ), intent(inout) :: cld_amount_max,                       &
-                                         cld_amount_rnd,                       &
-                                         cld_amount_maxrnd,                    &
-                                         ceil_cld_amount_maxrnd,               &
-                                         cld_base_altitude,                    &
-                                         low_cld_base_altitude,                &
-                                         very_low_cld_amount,                  &
-                                         low_cld_amount,                       &
-                                         medium_cld_amount,                    &
-                                         high_cld_amount,                      &
-                                         very_high_cld_amount,                 &
-                                         combined_cld_amount,                  &
-                                         icing_sfip_li_bcf,                    &
-                                         icing_sfip_lir_com,                   &
-                                         cloud_fraction_below_1000feet_asl
+    type( field_type ), intent(inout) :: sskew_bm, svar_bm, svar_tb
+    logical(l_def), intent(in) :: call_b4_conv
 
-    ! Fields passed in to copy properties from
-    type( field_type ), intent(in)    :: cf_area ! 3d field on wth
-    type( field_type ), intent(in)    :: zh      ! 2d field
+    if ( subroutine_timers ) call timer("cld_diags")
 
+    if (call_b4_conv) then
+      ! No diagnostics output in mid-timestep call
+      sskew_bm_flag = init_diag(sskew_bm, 'cloud__sskew_bm', deactivate=.true.)
+      svar_bm_flag = init_diag(svar_bm, 'cloud__svar_bm', deactivate=.true.)
+      svar_tb_flag = init_diag(svar_tb, 'cloud__svar_tb', deactivate=.true.)
+    else
+      ! Output diagnostics based on xios requirements
+      sskew_bm_flag = init_diag(sskew_bm, 'cloud__sskew_bm')
+      svar_bm_flag = init_diag(svar_bm, 'cloud__svar_bm')
+      svar_tb_flag = init_diag(svar_tb, 'cloud__svar_tb')
+    end if
+
+    if ( subroutine_timers ) call timer("cld_diags")
+
+  end subroutine initialise_diags_for_cld
+
+  !> @brief Output diagnostics from cld_alg
+  subroutine output_diags_for_cld( sskew_bm, svar_bm, svar_tb, &
+                                   cloud_fields,               &
+                                   convection_fields,          &
+                                   derived_fields,             &
+                                   mr,                         &
+                                   theta,                      &
+                                   theta_inc,                  &
+                                   exner_wth )
+
+    implicit none
+
+    ! Diagnostics computed within the kernels
+    type( field_type ),            intent(in) :: sskew_bm, svar_bm, svar_tb
+
+    ! Variables the diagnostics are calculated from
+    type( field_collection_type ), intent(in) :: cloud_fields,                 &
+                                                 convection_fields,            &
+                                                 derived_fields
+    type( field_type ),            intent(in) :: mr ( nummr ),                 &
+                                                 theta,                        &
+                                                 theta_inc,                    &
+                                                 exner_wth
+
+    type( mesh_type ),  pointer :: mesh => null()
+
+    type( field_type ), pointer :: cf_bulk    => null()
+    type( field_type ), pointer :: cf_area    => null()
+    type( field_type ), pointer :: cf_frozen  => null()
+    type( field_type ), pointer :: height_wth => null()
+    type( field_type ), pointer :: height_w3  => null()
+    type( field_type ), pointer :: cca        => null()
+    type( field_type ), pointer :: ccw        => null()
+    type( field_type ), pointer :: w_wind     => null()
+    type( field_type ), pointer :: rho_in_wth => null()
+
+    type( field_type ) :: cld_amount_max
+    type( field_type ) :: cld_amount_rnd
+    type( field_type ) :: cld_amount_maxrnd
+    type( field_type ) :: ceil_cld_amount_maxrnd
+    type( field_type ) :: cld_base_altitude
+    type( field_type ) :: low_cld_base_altitude
+    type( field_type ) :: very_low_cld_amount
+    type( field_type ) :: low_cld_amount
+    type( field_type ) :: medium_cld_amount
+    type( field_type ) :: high_cld_amount
+    type( field_type ) :: very_high_cld_amount
+    type( field_type ) :: combined_cld_amount
+    type( field_type ) :: icing_sfip_li_bcf
+    type( field_type ) :: icing_sfip_lir_com
+    type( field_type ) :: cloud_fraction_below_1000feet_asl
+    type( field_type ) :: ls_fraction
+    type( field_type ) :: theta_updated
+    type( field_type ) :: icing_condensate
+    type( field_type ) :: conv_cond
+    type( field_type ) :: mr_ice
+    ! Iterator for field collection
+    type(field_collection_iterator_type)  :: iterator
+    ! A pointer used for retrieving fields from collections
+    ! when iterating over them
+    class( field_parent_type ), pointer :: field_ptr  => null()
+    character(str_def) :: name
     logical( l_def ) :: ignore
 
     if ( subroutine_timers ) call timer("cld_diags")
@@ -141,89 +190,6 @@ contains
         init_diag(combined_cld_amount, 'cloud__combined_cloud_amount', activate=.true.)
     end if
 
-    if ( subroutine_timers ) call timer("cld_diags")
-
-  end subroutine initialise_diags_for_cld
-
-  !> @brief Output diagnostics from cld_alg
-  subroutine output_diags_for_cld( cld_amount_max,         & ! Diags to be
-                                   cld_amount_rnd,         & ! calculated...
-                                   cld_amount_maxrnd,      &
-                                   ceil_cld_amount_maxrnd, &
-                                   cld_base_altitude,      &
-                                   low_cld_base_altitude,  &
-                                   very_low_cld_amount,    &
-                                   low_cld_amount,         &
-                                   medium_cld_amount,      &
-                                   high_cld_amount,        &
-                                   very_high_cld_amount,   &
-                                   combined_cld_amount,    &
-                                   icing_sfip_li_bcf,      &
-                                   icing_sfip_lir_com,     &
-                                   cloud_fraction_below_1000feet_asl, &
-                                   !
-                                   cloud_fields,           & ! Variables they're
-                                   convection_fields,      & ! calculated from.
-                                   derived_fields,         &
-                                   mr,                     &
-                                   theta,                  &
-                                   theta_inc,              &
-                                   exner_wth )
-
-    implicit none
-
-    ! Diagnostics computed within the kernels
-    type( field_type ),            intent(in) :: cld_amount_max,               &
-                                                 cld_amount_rnd,               &
-                                                 cld_amount_maxrnd,            &
-                                                 ceil_cld_amount_maxrnd,       &
-                                                 cld_base_altitude,            &
-                                                 low_cld_base_altitude,        &
-                                                 very_low_cld_amount,          &
-                                                 low_cld_amount,               &
-                                                 medium_cld_amount,            &
-                                                 high_cld_amount,              &
-                                                 very_high_cld_amount,         &
-                                                 combined_cld_amount,          &
-                                                 icing_sfip_li_bcf,            &
-                                                 icing_sfip_lir_com,           &
-                                                 cloud_fraction_below_1000feet_asl
-
-    ! Variables the diagnostics are calculated from
-    type( field_collection_type ), intent(in) :: cloud_fields,                 &
-                                                 convection_fields,            &
-                                                 derived_fields
-    type( field_type ),            intent(in) :: mr ( nummr ),                 &
-                                                 theta,                        &
-                                                 theta_inc,                    &
-                                                 exner_wth
-
-    type( mesh_type ),  pointer :: mesh => null()
-
-    type( field_type ), pointer :: cf_bulk    => null()
-    type( field_type ), pointer :: cf_area    => null()
-    type( field_type ), pointer :: cf_frozen  => null()
-    type( field_type ), pointer :: height_wth => null()
-    type( field_type ), pointer :: height_w3  => null()
-    type( field_type ), pointer :: cca        => null()
-    type( field_type ), pointer :: ccw        => null()
-    type( field_type ), pointer :: w_wind     => null()
-    type( field_type ), pointer :: rho_in_wth => null()
-
-    type( field_type ) :: ls_fraction
-    type( field_type ) :: theta_updated
-    type( field_type ) :: icing_condensate
-    type( field_type ) :: conv_cond
-    type( field_type ) :: mr_ice
-    ! Iterator for field collection
-    type(field_collection_iterator_type)  :: iterator
-    ! A pointer used for retrieving fields from collections
-    ! when iterating over them
-    class( field_parent_type ), pointer :: field_ptr  => null()
-    character(str_def) :: name
-
-    if ( subroutine_timers ) call timer("cld_diags")
-
     if (cld_amount_max_flag         .or. &
         cld_amount_rnd_flag         .or. &
         cld_amount_maxrnd_flag      .or. &
@@ -252,6 +218,7 @@ contains
                       inc_X_times_Y(ls_fraction, cf_area),    &
                       ! Calculate combined_cld_amount.
                       X_plus_Y(combined_cld_amount, ls_fraction, cca) )
+        call ls_fraction%field_final()
 
         ! Calculate total ice field
         call mr(imr_s)%copy_field_properties(mr_ice)
@@ -360,6 +327,7 @@ contains
                                             icing_condensate,                  &
                                             w_wind,                            &
                                             height_wth ) )
+      call conv_cond%field_final()
     end if
 
     ! Write out the cloud fields collection as diagnostics
@@ -377,6 +345,9 @@ contains
     field_ptr => null()
 
     ! Write out the required diagnostics
+    if (sskew_bm_flag) call sskew_bm%write_field()
+    if (svar_bm_flag) call svar_bm%write_field()
+    if (svar_tb_flag) call svar_tb%write_field()
     if (cld_amount_max_flag) call cld_amount_max%write_field()
     if (cld_amount_rnd_flag) call cld_amount_rnd%write_field()
     if (cld_amount_maxrnd_flag) call cld_amount_maxrnd%write_field()

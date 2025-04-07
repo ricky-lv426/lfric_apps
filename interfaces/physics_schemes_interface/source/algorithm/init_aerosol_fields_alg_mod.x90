@@ -28,13 +28,13 @@ contains
   !> @param[in,out] aerosol_fields   aerosol related fields
   subroutine init_aerosol_fields_alg(aerosol_fields)
 
-    use socrates_init_mod, only: n_sw_band, n_lw_band
     use section_choice_config_mod, only: aerosol, aerosol_um
     use aerosol_config_mod, only: glomap_mode,               &
                                   glomap_mode_climatology,   &
                                   glomap_mode_dust_and_clim, &
                                   glomap_mode_ukca,          &
-                                  l_radaer
+                                  l_radaer, murk,            &
+                                  murk_prognostic
 
     implicit none
 
@@ -54,13 +54,11 @@ contains
     type( field_type ), pointer :: acc_sol_bc => null()
     type( field_type ), pointer :: acc_sol_om => null()
     type( field_type ), pointer :: acc_sol_ss => null()
-    type( field_type ), pointer :: acc_sol_du => null()
     type( field_type ), pointer :: n_cor_sol => null()
     type( field_type ), pointer :: cor_sol_su => null()
     type( field_type ), pointer :: cor_sol_bc => null()
     type( field_type ), pointer :: cor_sol_om => null()
     type( field_type ), pointer :: cor_sol_ss => null()
-    type( field_type ), pointer :: cor_sol_du => null()
     type( field_type ), pointer :: n_ait_ins => null()
     type( field_type ), pointer :: ait_ins_bc => null()
     type( field_type ), pointer :: ait_ins_om => null()
@@ -121,23 +119,18 @@ contains
     type( field_type ), pointer :: pvol_bc_acc_sol => null()
     type( field_type ), pointer :: pvol_om_acc_sol => null()
     type( field_type ), pointer :: pvol_ss_acc_sol => null()
-    type( field_type ), pointer :: pvol_du_acc_sol => null()
     type( field_type ), pointer :: pvol_su_cor_sol => null()
     type( field_type ), pointer :: pvol_bc_cor_sol => null()
     type( field_type ), pointer :: pvol_om_cor_sol => null()
     type( field_type ), pointer :: pvol_ss_cor_sol => null()
-    type( field_type ), pointer :: pvol_du_cor_sol => null()
     type( field_type ), pointer :: pvol_bc_ait_ins => null()
     type( field_type ), pointer :: pvol_om_ait_ins => null()
     type( field_type ), pointer :: pvol_du_acc_ins => null()
     type( field_type ), pointer :: pvol_du_cor_ins => null()
 
-    type( field_type ), pointer :: murk => null()
+    type( field_type ), pointer :: murk_3d => null()
     type( field_type ), pointer :: murk_source => null()
 
-    call aerosol_fields%get_field('n_nuc_sol', n_nuc_sol)
-    call aerosol_fields%get_field('nuc_sol_su', nuc_sol_su)
-    call aerosol_fields%get_field('nuc_sol_om', nuc_sol_om)
     call aerosol_fields%get_field('n_ait_sol', n_ait_sol)
     call aerosol_fields%get_field('ait_sol_su', ait_sol_su)
     call aerosol_fields%get_field('ait_sol_bc', ait_sol_bc)
@@ -147,13 +140,11 @@ contains
     call aerosol_fields%get_field('acc_sol_bc', acc_sol_bc)
     call aerosol_fields%get_field('acc_sol_om', acc_sol_om)
     call aerosol_fields%get_field('acc_sol_ss', acc_sol_ss)
-    call aerosol_fields%get_field('acc_sol_du', acc_sol_du)
     call aerosol_fields%get_field('n_cor_sol', n_cor_sol)
     call aerosol_fields%get_field('cor_sol_su', cor_sol_su)
     call aerosol_fields%get_field('cor_sol_bc', cor_sol_bc)
     call aerosol_fields%get_field('cor_sol_om', cor_sol_om)
     call aerosol_fields%get_field('cor_sol_ss', cor_sol_ss)
-    call aerosol_fields%get_field('cor_sol_du', cor_sol_du)
     call aerosol_fields%get_field('n_ait_ins', n_ait_ins)
     call aerosol_fields%get_field('ait_ins_bc', ait_ins_bc)
     call aerosol_fields%get_field('ait_ins_om', ait_ins_om)
@@ -195,25 +186,28 @@ contains
       call aerosol_fields%get_field('pvol_bc_acc_sol', pvol_bc_acc_sol)
       call aerosol_fields%get_field('pvol_om_acc_sol', pvol_om_acc_sol)
       call aerosol_fields%get_field('pvol_ss_acc_sol', pvol_ss_acc_sol)
-      call aerosol_fields%get_field('pvol_du_acc_sol', pvol_du_acc_sol)
       call aerosol_fields%get_field('pvol_su_cor_sol', pvol_su_cor_sol)
       call aerosol_fields%get_field('pvol_bc_cor_sol', pvol_bc_cor_sol)
       call aerosol_fields%get_field('pvol_om_cor_sol', pvol_om_cor_sol)
       call aerosol_fields%get_field('pvol_ss_cor_sol', pvol_ss_cor_sol)
-      call aerosol_fields%get_field('pvol_du_cor_sol', pvol_du_cor_sol)
       call aerosol_fields%get_field('pvol_bc_ait_ins', pvol_bc_ait_ins)
       call aerosol_fields%get_field('pvol_om_ait_ins', pvol_om_ait_ins)
       call aerosol_fields%get_field('pvol_du_acc_ins', pvol_du_acc_ins)
       call aerosol_fields%get_field('pvol_du_cor_ins', pvol_du_cor_ins)
 
-      call aerosol_fields%get_field('murk', murk)
+      call aerosol_fields%get_field('murk', murk_3d)
       call aerosol_fields%get_field('murk_source', murk_source)
+      if (murk) call invoke(setval_c(murk_3d, 20.0_r_def))
+      if (murk_prognostic) call invoke(setval_c(murk_source, 2.0e-4_r_def))
+
     end if
 
     if ( aerosol == aerosol_um .and.            &
-         ( glomap_mode == glomap_mode_ukca .or. &
-           glomap_mode == glomap_mode_dust_and_clim ) ) then
+         glomap_mode == glomap_mode_ukca ) then
 
+      call aerosol_fields%get_field('n_nuc_sol', n_nuc_sol)
+      call aerosol_fields%get_field('nuc_sol_su', nuc_sol_su)
+      call aerosol_fields%get_field('nuc_sol_om', nuc_sol_om)
       call aerosol_fields%get_field('emiss_bc_biofuel', emiss_bc_biofuel)
       call aerosol_fields%get_field('emiss_bc_fossil', emiss_bc_fossil)
       call aerosol_fields%get_field('emiss_bc_biomass', emiss_bc_biomass)
@@ -253,13 +247,11 @@ contains
                    setval_c(acc_sol_bc,            0.0_r_def), &
                    setval_c(acc_sol_om,            0.0_r_def), &
                    setval_c(acc_sol_ss,            0.0_r_def), &
-                   setval_c(acc_sol_du,            0.0_r_def), &
                    setval_c(n_cor_sol,             0.0_r_def), &
                    setval_c(cor_sol_su,            0.0_r_def), &
                    setval_c(cor_sol_bc,            0.0_r_def), &
                    setval_c(cor_sol_om,            0.0_r_def), &
                    setval_c(cor_sol_ss,            0.0_r_def), &
-                   setval_c(cor_sol_du,            0.0_r_def), &
                    setval_c(n_ait_ins,             0.0_r_def), &
                    setval_c(ait_ins_bc,            0.0_r_def), &
                    setval_c(ait_ins_om,            0.0_r_def), &
@@ -322,27 +314,21 @@ contains
                    setval_c(pvol_bc_acc_sol,       0.0_r_def), &
                    setval_c(pvol_om_acc_sol,       0.0_r_def), &
                    setval_c(pvol_ss_acc_sol,       0.0_r_def), &
-                   setval_c(pvol_du_acc_sol,       0.0_r_def), &
                    setval_c(pvol_su_cor_sol,       0.0_r_def), &
                    setval_c(pvol_bc_cor_sol,       0.0_r_def), &
                    setval_c(pvol_om_cor_sol,       0.0_r_def), &
                    setval_c(pvol_ss_cor_sol,       0.0_r_def), &
-                   setval_c(pvol_du_cor_sol,       0.0_r_def), &
                    setval_c(pvol_bc_ait_ins,       0.0_r_def), &
                    setval_c(pvol_om_ait_ins,       0.0_r_def), &
                    setval_c(pvol_du_acc_ins,       0.0_r_def), &
-                   setval_c(pvol_du_cor_ins,       0.0_r_def), &
-                   setval_c(murk,                 20.0_r_def), &
-                   setval_c(murk_source,        2.0e-4_r_def) )
+                   setval_c(pvol_du_cor_ins,       0.0_r_def))
 
     else if (aerosol == aerosol_um .and. &
-             glomap_mode == glomap_mode_climatology) then
+         ( glomap_mode == glomap_mode_climatology .or. &
+           glomap_mode == glomap_mode_dust_and_clim ) ) then
 
       ! GLOMAP-mode climatology scheme selected.
-      call invoke( setval_c(n_nuc_sol,             0.0_r_def), &
-                   setval_c(nuc_sol_su,            0.0_r_def), &
-                   setval_c(nuc_sol_om,            0.0_r_def), &
-                   setval_c(n_ait_sol,             0.0_r_def), &
+      call invoke( setval_c(n_ait_sol,             0.0_r_def), &
                    setval_c(ait_sol_su,            0.0_r_def), &
                    setval_c(ait_sol_bc,            0.0_r_def), &
                    setval_c(ait_sol_om,            0.0_r_def), &
@@ -351,13 +337,11 @@ contains
                    setval_c(acc_sol_bc,            0.0_r_def), &
                    setval_c(acc_sol_om,            0.0_r_def), &
                    setval_c(acc_sol_ss,            0.0_r_def), &
-                   setval_c(acc_sol_du,            0.0_r_def), &
                    setval_c(n_cor_sol,             0.0_r_def), &
                    setval_c(cor_sol_su,            0.0_r_def), &
                    setval_c(cor_sol_bc,            0.0_r_def), &
                    setval_c(cor_sol_om,            0.0_r_def), &
                    setval_c(cor_sol_ss,            0.0_r_def), &
-                   setval_c(cor_sol_du,            0.0_r_def), &
                    setval_c(n_ait_ins,             0.0_r_def), &
                    setval_c(ait_ins_bc,            0.0_r_def), &
                    setval_c(ait_ins_om,            0.0_r_def), &
@@ -365,9 +349,9 @@ contains
                    setval_c(acc_ins_du,            0.0_r_def), &
                    setval_c(n_cor_ins,             0.0_r_def), &
                    setval_c(cor_ins_du,            0.0_r_def), &
-                   setval_c(soil_clay,             0.0_r_def), &
-                   setval_c(soil_sand,             0.0_r_def), &
-                   setval_c(dust_mrel,             0.0_r_def), &
+                   setval_c(soil_clay,             0.2_r_def), &
+                   setval_c(soil_sand,             0.2_r_def), &
+                   setval_c(dust_mrel,           0.167_r_def), &
                    setval_c(dust_flux,             0.0_r_def), &
                    ! Default values of CDNC for microphysics and
                    ! particle properties for RADAER if not output by the
@@ -398,18 +382,14 @@ contains
                    setval_c(pvol_bc_acc_sol,       0.0_r_def), &
                    setval_c(pvol_om_acc_sol,       0.0_r_def), &
                    setval_c(pvol_ss_acc_sol,       0.0_r_def), &
-                   setval_c(pvol_du_acc_sol,       0.0_r_def), &
                    setval_c(pvol_su_cor_sol,       0.0_r_def), &
                    setval_c(pvol_bc_cor_sol,       0.0_r_def), &
                    setval_c(pvol_om_cor_sol,       0.0_r_def), &
                    setval_c(pvol_ss_cor_sol,       0.0_r_def), &
-                   setval_c(pvol_du_cor_sol,       0.0_r_def), &
                    setval_c(pvol_bc_ait_ins,       0.0_r_def), &
                    setval_c(pvol_om_ait_ins,       0.0_r_def), &
                    setval_c(pvol_du_acc_ins,       0.0_r_def), &
-                   setval_c(pvol_du_cor_ins,       0.0_r_def), &
-                   setval_c(murk,                 20.0_r_def), &
-                   setval_c(murk_source,        2.0e-4_r_def) )
+                   setval_c(pvol_du_cor_ins,       0.0_r_def))
 
     else if (aerosol == aerosol_um .and. l_radaer) then
 
@@ -420,10 +400,7 @@ contains
       ! Note that particle property values will not be consistent with aerosol
       ! tracer values. Aerosol values set here are consistent with CDNC
       ! approx 1e8 m-3.
-      call invoke( setval_c(n_nuc_sol,             0.0_r_def), &
-                   setval_c(nuc_sol_su,            0.0_r_def), &
-                   setval_c(nuc_sol_om,            0.0_r_def), &
-                   setval_c(n_ait_sol,         7.0e-19_r_def), &
+      call invoke( setval_c(n_ait_sol,         7.0e-19_r_def), &
                    setval_c(ait_sol_su,        7.0e-12_r_def), &
                    setval_c(ait_sol_bc,        7.0e-12_r_def), &
                    setval_c(ait_sol_om,        3.0e-11_r_def), &
@@ -433,15 +410,11 @@ contains
                    setval_c(acc_sol_om,        3.0e-11_r_def), &
                    setval_c(acc_sol_ss,        3.0e-11_r_def), &
                    ! Dummy value - find a better one
-                   setval_c(acc_sol_du,        5.0e-12_r_def), &
-                   ! Dummy value - find a better one
                    setval_c(n_cor_sol,         2.0e-20_r_def), &
                    setval_c(cor_sol_su,        3.0e-12_r_def), &
                    setval_c(cor_sol_bc,        7.0e-14_r_def), &
                    setval_c(cor_sol_om,        7.0e-13_r_def), &
                    setval_c(cor_sol_ss,         1.3e-9_r_def), &
-                   ! Dummy value - find a better one
-                   setval_c(cor_sol_du,        5.0e-12_r_def), &
                    ! Dummy value - find a better one
                    setval_c(n_ait_ins,         7.0e-20_r_def), &
                    setval_c(ait_ins_bc,        3.0e-12_r_def), &
@@ -483,28 +456,21 @@ contains
                    setval_c(pvol_bc_acc_sol,   1.0e-21_r_def), &
                    setval_c(pvol_om_acc_sol,   1.0e-21_r_def), &
                    setval_c(pvol_ss_acc_sol,   1.0e-21_r_def), &
-                   setval_c(pvol_du_acc_sol,   1.0e-21_r_def), &
                    setval_c(pvol_su_cor_sol,   1.0e-19_r_def), &
                    setval_c(pvol_bc_cor_sol,   1.0e-19_r_def), &
                    setval_c(pvol_om_cor_sol,   1.0e-19_r_def), &
                    setval_c(pvol_ss_cor_sol,   1.0e-19_r_def), &
-                   setval_c(pvol_du_cor_sol,   1.0e-19_r_def), &
                    setval_c(pvol_bc_ait_ins,   1.0e-22_r_def), &
                    setval_c(pvol_om_ait_ins,   1.0e-22_r_def), &
                    setval_c(pvol_du_acc_ins,   1.0e-21_r_def), &
-                   setval_c(pvol_du_cor_ins,   1.0e-18_r_def), &
-                   setval_c(murk,                 20.0_r_def), &
-                   setval_c(murk_source,        2.0e-4_r_def) )
+                   setval_c(pvol_du_cor_ins,   1.0e-18_r_def))
 
     else
 
       ! No GLOMAP-mode aerosol scheme and no requirement for mode-specific
       ! output. Set CDNC to fixed value for microphysics. Other aerosol
       ! fields are not used so set to zero.
-      call invoke( setval_c(n_nuc_sol,             0.0_r_def), &
-                   setval_c(nuc_sol_su,            0.0_r_def), &
-                   setval_c(nuc_sol_om,            0.0_r_def), &
-                   setval_c(n_ait_sol,             0.0_r_def), &
+      call invoke( setval_c(n_ait_sol,             0.0_r_def), &
                    setval_c(ait_sol_su,            0.0_r_def), &
                    setval_c(ait_sol_bc,            0.0_r_def), &
                    setval_c(ait_sol_om,            0.0_r_def), &
@@ -513,13 +479,11 @@ contains
                    setval_c(acc_sol_bc,            0.0_r_def), &
                    setval_c(acc_sol_om,            0.0_r_def), &
                    setval_c(acc_sol_ss,            0.0_r_def), &
-                   setval_c(acc_sol_du,            0.0_r_def), &
                    setval_c(n_cor_sol,             0.0_r_def), &
                    setval_c(cor_sol_su,            0.0_r_def), &
                    setval_c(cor_sol_bc,            0.0_r_def), &
                    setval_c(cor_sol_om,            0.0_r_def), &
                    setval_c(cor_sol_ss,            0.0_r_def), &
-                   setval_c(cor_sol_du,            0.0_r_def), &
                    setval_c(n_ait_ins,             0.0_r_def), &
                    setval_c(ait_ins_bc,            0.0_r_def), &
                    setval_c(ait_ins_om,            0.0_r_def), &
@@ -559,18 +523,14 @@ contains
                     setval_c(pvol_bc_acc_sol,       0.0_r_def), &
                     setval_c(pvol_om_acc_sol,       0.0_r_def), &
                     setval_c(pvol_ss_acc_sol,       0.0_r_def), &
-                    setval_c(pvol_du_acc_sol,       0.0_r_def), &
                     setval_c(pvol_su_cor_sol,       0.0_r_def), &
                     setval_c(pvol_bc_cor_sol,       0.0_r_def), &
                     setval_c(pvol_om_cor_sol,       0.0_r_def), &
                     setval_c(pvol_ss_cor_sol,       0.0_r_def), &
-                    setval_c(pvol_du_cor_sol,       0.0_r_def), &
                     setval_c(pvol_bc_ait_ins,       0.0_r_def), &
                     setval_c(pvol_om_ait_ins,       0.0_r_def), &
                     setval_c(pvol_du_acc_ins,       0.0_r_def), &
-                    setval_c(pvol_du_cor_ins,       0.0_r_def), &
-                    setval_c(murk,                 20.0_r_def), &
-                    setval_c(murk_source,        2.0e-4_r_def) )
+                    setval_c(pvol_du_cor_ins,       0.0_r_def))
       end if
 
     end if

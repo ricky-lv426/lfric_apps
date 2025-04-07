@@ -33,7 +33,7 @@ module conv_gr_kernel_mod
   !>
   type, public, extends(kernel_type) :: conv_gr_kernel_type
     private
-    type(arg_type) :: meta_args(212) = (/                                         &
+    type(arg_type) :: meta_args(210) = (/                                         &
          arg_type(GH_SCALAR, GH_INTEGER, GH_READ),                                &! outer
          arg_type(GH_FIELD,  GH_REAL,    GH_READ,      W3),                       &! rho_in_w3
          arg_type(GH_FIELD,  GH_REAL,    GH_READ,      WTHETA),                   &! rho_in_wth
@@ -189,13 +189,11 @@ module conv_gr_kernel_mod
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! acc_sol_bc
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! acc_sol_om
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! acc_sol_ss
-         arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! acc_sol_du
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! n_cor_sol
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! cor_sol_su
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! cor_sol_bc
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! cor_sol_om
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! cor_sol_ss
-         arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! cor_sol_du
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! n_ait_ins
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! ait_ins_bc
          arg_type(GH_FIELD,  GH_REAL,    GH_READWRITE, WTHETA),                   &! ait_ins_om
@@ -416,13 +414,11 @@ contains
   !> @param[in,out] acc_sol_bc           Aerosol field: m.m.r. of black carbon in soluble accumulation mode
   !> @param[in,out] acc_sol_om           Aerosol field: m.m.r. of organic matter in soluble accumulation mode
   !> @param[in,out] acc_sol_ss           Aerosol field: m.m.r. of sea salt in soluble accumulation mode
-  !> @param[in,out] acc_sol_du           Aerosol field: m.m.r. of dust in soluble accumulation mode
   !> @param[in,out] n_cor_sol            Aerosol field: n.m.r. of soluble coarse mode
   !> @param[in,out] cor_sol_su           Aerosol field: m.m.r. of H2SO4 in soluble coarse mode
   !> @param[in,out] cor_sol_bc           Aerosol field: m.m.r. of black carbon in soluble coarse mode
   !> @param[in,out] cor_sol_om           Aerosol field: m.m.r. of organic matter in soluble coarse mode
   !> @param[in,out] cor_sol_ss           Aerosol field: m.m.r. of sea salt in soluble coarse mode
-  !> @param[in,out] cor_sol_du           Aerosol field: m.m.r. of dust in soluble coarse mode
   !> @param[in,out] n_ait_ins            Aerosol field: n.m.r. of insoluble Aitken mode
   !> @param[in,out] ait_ins_bc           Aerosol field: m.m.r. of black carbon in insoluble Aitken mode
   !> @param[in,out] ait_ins_om           Aerosol field: m.m.r. of organic matter in insoluble Aitken mode
@@ -641,13 +637,11 @@ contains
                           acc_sol_bc,                        &
                           acc_sol_om,                        &
                           acc_sol_ss,                        &
-                          acc_sol_du,                        &
                           n_cor_sol,                         &
                           cor_sol_su,                        &
                           cor_sol_bc,                        &
                           cor_sol_om,                        &
                           cor_sol_ss,                        &
-                          cor_sol_du,                        &
                           n_ait_ins,                         &
                           ait_ins_bc,                        &
                           ait_ins_om,                        &
@@ -1020,13 +1014,11 @@ contains
     real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_bc
     real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_om
     real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_ss
-    real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_du
     real(kind=r_def), intent(in out), dimension(undf_wth) :: n_cor_sol
     real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_su
     real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_bc
     real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_om
     real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_ss
-    real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_du
     real(kind=r_def), intent(in out), dimension(undf_wth) :: n_ait_ins
     real(kind=r_def), intent(in out), dimension(undf_wth) :: ait_ins_bc
     real(kind=r_def), intent(in out), dimension(undf_wth) :: ait_ins_om
@@ -1681,8 +1673,7 @@ contains
           tot_tracer( 1, 1, :, i ) =                                           &
             real( acc_sol_ss( map_wth(1) + 1 : map_wth(1) + ntra_lev ), r_um )
         case(fldname_acc_sol_du)
-          tot_tracer( 1, 1, :, i ) =                                           &
-            real( acc_sol_du( map_wth(1) + 1 : map_wth(1) + ntra_lev ), r_um )
+          tot_tracer( 1, 1, :, i ) = 0.0_r_um ! no prognostic, always zero
         case(fldname_n_cor_sol)
           tot_tracer( 1, 1, :, i ) =                                           &
             real( n_cor_sol( map_wth(1) + 1 : map_wth(1) + ntra_lev ), r_um )
@@ -1699,8 +1690,7 @@ contains
           tot_tracer( 1, 1, :, i ) =                                           &
             real( cor_sol_ss( map_wth(1) + 1 : map_wth(1) + ntra_lev ), r_um )
         case(fldname_cor_sol_du)
-          tot_tracer( 1, 1, :, i ) =                                           &
-            real( cor_sol_du( map_wth(1) + 1 : map_wth(1) + ntra_lev ), r_um )
+          tot_tracer( 1, 1, :, i ) = 0.0_r_um ! no prognostic, always zero
         case(fldname_n_ait_ins)
           tot_tracer( 1, 1, :, i ) =                                           &
             real( n_ait_ins( map_wth(1) + 1 : map_wth(1) + ntra_lev ), r_um )
@@ -2752,9 +2742,7 @@ contains
             real( tot_tracer( 1, 1, :, i ), r_def )
           acc_sol_ss( map_wth(1) + 0 ) = acc_sol_ss( map_wth(1) + 1 )
         case(fldname_acc_sol_du)
-          acc_sol_du( map_wth(1) + 1 : map_wth(1) + ntra_lev ) =               &
-            real( tot_tracer( 1, 1, :, i ), r_def )
-          acc_sol_du( map_wth(1) + 0 ) = acc_sol_du( map_wth(1) + 1 )
+          ! No field to update
         case(fldname_n_cor_sol)
           n_cor_sol( map_wth(1) + 1 : map_wth(1) + ntra_lev ) =                &
             real( tot_tracer( 1, 1, :, i ), r_def )
@@ -2776,9 +2764,7 @@ contains
             real( tot_tracer( 1, 1, :, i ), r_def )
           cor_sol_ss( map_wth(1) + 0 ) = cor_sol_ss( map_wth(1) + 1 )
         case(fldname_cor_sol_du)
-          cor_sol_du( map_wth(1) + 1 : map_wth(1) + ntra_lev ) =               &
-            real( tot_tracer( 1, 1, :, i ), r_def )
-          cor_sol_du( map_wth(1) + 0 ) = cor_sol_du( map_wth(1) + 1 )
+          ! No field to update
         case(fldname_n_ait_ins)
           n_ait_ins( map_wth(1) + 1 : map_wth(1) + ntra_lev ) =                &
             real( tot_tracer( 1, 1, :, i ), r_def )

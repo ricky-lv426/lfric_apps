@@ -161,8 +161,6 @@ contains
   !> @param[in,out] du                     Increment to wind field
   !> @param[in,out] dtheta                 Increment to theta field
   !> @param[in,out] mr                     Mixing ratios to be updated
-  !> @param[in,out] visc_m                 Smagorinsky momentum diffusion coef
-  !> @param[in,out] visc_h                 Smagorinsky heat diffusion coef
   !> @param[in]     theta                  Theta field at start of timestep
   !> @param[in]     u                      3D wind field at start of timestep
   !> @param[in]     rho                    Rho on w3 space
@@ -187,7 +185,7 @@ contains
   !> @param[in]     dtemp_encorr           Temperature increment for energy correction
   !> @param[in]     mesh                   Current mesh
   !> @param[in]     twod_mesh              2d mesh
-  subroutine slow_physics(modeldb, du, dtheta, mr, visc_m, visc_h,             &
+  subroutine slow_physics(modeldb, du, dtheta, mr,                             &
                           theta, u, rho, exner, moist_dyn, mr_n,               &
                           derived_fields,                                      &
                           radiation_fields, microphysics_fields,               &
@@ -202,7 +200,7 @@ contains
 
     type( modeldb_type ), intent( in ), target  :: modeldb
     ! Fields
-    type( field_type ), intent( inout )      :: du, dtheta, visc_m, visc_h
+    type( field_type ), intent( inout )      :: du, dtheta
     type( field_type ), intent( in ), target :: theta, u, rho, exner
 
     ! Field bundles
@@ -468,6 +466,7 @@ contains
           call map_rho_intermesh(rho_coarse, rho)
           call map_scalar_field(exner_in_wth_coarse, exner_in_wth)
           call map_mr_bundle_intermesh(mr_n_coarse, mr_n, rho_coarse, rho)
+          call rho_coarse%field_final()
           ! Set pointers
           theta_aero => theta_coarse
           exner_aero => exner_coarse
@@ -546,6 +545,7 @@ contains
         call um_sizes_init(1_i_def)
       end if
       microphysics_done = .true. ! Collect this increment later on
+      call f_arr%field_final()
     end if
 
     !--------------------------------------------------------------------
@@ -587,6 +587,10 @@ contains
 
       ! no electric_done flag yet as at present the scheme only generates
       ! diagnostics and does not affect model evolution.
+      do i_mr = 1, nummr
+        call mr_electric(i_mr)%field_final()
+      end do
+      call theta_electric%field_final()
 
     end if ! call to electric scheme
 
@@ -647,6 +651,13 @@ contains
                          aerosol_twod_mesh,                                    &
                          clock%get_step() )
       end if
+      call theta_coarse%field_final()
+      call exner_coarse%field_final()
+      call exner_in_wth_coarse%field_final()
+      do i_mr = 1, nummr
+        call mr_n_coarse(i_mr)%field_final()
+      end do
+      call trop_level%field_final()
 
       !--------------------------------------------------------------------
       ! Easy Aerosol climatology
@@ -692,6 +703,12 @@ contains
                           conv_liquid_fraction, conv_frozen_fraction,          &
                           conv_liquid_mmr, conv_frozen_mmr )
       radiation_done = .true. ! Collect this increment later on
+      call tile_lw_albedo%field_final()
+      call tile_lwinc_albedo%field_final()
+      call tile_sw_diffuse_albedo%field_final()
+      call tile_sw_direct_albedo%field_final()
+      call tile_swinc_diffuse_albedo%field_final()
+      call tile_swinc_direct_albedo%field_final()
 
       !--------------------------------------------------------------------
       ! PC2 cloud scheme: radiative increments
@@ -726,6 +743,17 @@ contains
                       conv_liquid_fraction, conv_frozen_fraction, &
                       conv_liquid_mmr, conv_frozen_mmr)
       end if
+
+      call pressure_in_wth%field_final()
+      call temperature_in_wth%field_final()
+      call rand_seed%field_final()
+      call n_cloud_layer%field_final()
+      call radiative_cloud_fraction%field_final()
+      call radiative_conv_fraction%field_final()
+      call conv_liquid_fraction%field_final()
+      call conv_frozen_fraction%field_final()
+      call conv_liquid_mmr%field_final()
+      call conv_frozen_mmr%field_final()
 
     end if
 
@@ -779,7 +807,7 @@ contains
     ! UM explicit boundary layer and Jules surface schemes
     !--------------------------------------------------------------------
     if (boundary_layer == boundary_layer_um ) then
-      call bl_exp_alg(modeldb, visc_m, visc_h, theta, rho, exner, mr_n,  &
+      call bl_exp_alg(modeldb, theta, rho, exner, mr_n,                  &
                       derived_fields, radiation_fields,                  &
                       microphysics_fields, dmr_mphys, orography_fields,  &
                       turbulence_fields, convection_fields, cloud_fields,&
@@ -916,6 +944,7 @@ contains
 
     if (energy_correction_done) then
       call invoke(inc_X_plus_Y(dtheta, dtheta_encorr))
+      call dtheta_encorr%field_final()
     end if
 
     if (wind_forcing_done) then
@@ -925,12 +954,18 @@ contains
     if (microphysics_done) then
       call invoke(inc_X_plus_Y(dtheta, dtheta_mphys))
       call add_bundle(dmr_mphys, mr, mr, nummr)
+      do i_mr = 1, nummr
+        call dmr_mphys(i_mr)%field_final()
+      end do
       if (cloud == cloud_um .and. scheme == scheme_pc2) then
         call invoke(name="update_with_pc2_mphys_inc",              &
                     inc_X_plus_Y(liquid_fraction, dcfl_pc2_mphys), &
                     inc_X_plus_Y(frozen_fraction, dcff_pc2_mphys), &
                     inc_X_plus_Y(bulk_fraction,   dbcf_pc2_mphys)  )
       end if
+      call dcfl_pc2_mphys%field_final()
+      call dcff_pc2_mphys%field_final()
+      call dbcf_pc2_mphys%field_final()
     end if
 
     if (radiation_done) then
@@ -943,37 +978,53 @@ contains
                     inc_X_plus_Y(bulk_fraction,   dbcf_pc2_rad)    )
       end if
       call invoke(inc_X_plus_Y(dtheta, dtheta_rad))
+      call dtheta_pc2_rad%field_final()
+      call dmcl_pc2_rad%field_final()
+      call dcfl_pc2_rad%field_final()
+      call dbcf_pc2_rad%field_final()
     end if
 
     if (spectral_gwd_done) then
       call invoke(inc_X_plus_Y(dtheta, dtheta_spectral_gwd), &
                   inc_X_plus_Y(du, du_tot_spectral_gwd))
+      call dtheta_spectral_gwd%field_final()
+      call du_tot_spectral_gwd%field_final()
     end if
 
     if (orographic_drag_done) then
       call invoke(inc_X_plus_Y(dtheta, dtheta_orographic_drag), &
                   inc_X_plus_Y(du, du_tot_orographic_drag))
+      call dtheta_orographic_drag%field_final()
+      call du_tot_orographic_drag%field_final()
     end if
 
     if (methox_done) then
       call invoke(inc_X_plus_Y(mr(imr_v), dmv_methox))
+      call dmv_methox%field_final()
     end if
 
     if (leonard_term_done) then
       call invoke(inc_X_plus_Y(mr(imr_v), mt_inc_leonard), &
                   inc_X_plus_Y(dtheta, thetal_inc_leonard), &
                   inc_X_plus_Y(du, u_inc_leonard) )
+      call u_inc_leonard%field_final()
     end if
 
     if (boundary_layer_done) then
       call invoke(inc_X_plus_Y(du, du_bl), &
                   inc_X_plus_Y(dtheta, dtheta_bl) )
+      call du_bl%field_final()
+      call dtheta_bl%field_final()
     end if
 
     if (evap_condense_done) then
       call invoke(inc_X_plus_Y(dtheta,      dtheta_cld),     &
                   inc_X_plus_Y(mr(imr_v),   dmr_cld(imr_v)), &
                   inc_X_plus_Y(mr(imr_cl),  dmr_cld(imr_cl)))
+      do i_mr = 1, nummr
+        call dmr_cld(i_mr)%field_final()
+      end do
+      call dtheta_cld%field_final()
     end if
 
 #ifdef UM_PHYSICS

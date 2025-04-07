@@ -1073,6 +1073,12 @@ contains
         visc_m_blend(map_wth(1,i) + bl_levels) = visc_m(i,1,bl_levels-1)
         visc_h_blend(map_wth(1,i) + bl_levels) = visc_h(i,1,bl_levels-1)
       end do
+      do k = bl_levels+1, nlayers
+        do i = 1, seg_len
+          visc_m_blend(map_wth(1,i) + k) = 0.0_r_def
+          visc_h_blend(map_wth(1,i) + k) = 0.0_r_def
+        end do
+      end do
     endif
 
     ! update BL prognostics

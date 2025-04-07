@@ -290,17 +290,6 @@ module coupler_mod
     call add_cpl_field(depository, prognostic_fields, &
          'lf_svnocean', vector_space, checkpoint_restart_flag)
 
-    ! Special 3D fields needed when converting incoming ocean u/v
-    ! from W3 (cell centres) to W2 (cell faces)
-    call add_cpl_field(depository, prognostic_fields, &
-         'sea_u_3d', threed_space, checkpoint_restart_flag)
-
-    call add_cpl_field(depository, prognostic_fields, &
-         'sea_v_3d', threed_space, checkpoint_restart_flag)
-
-    call add_cpl_field(depository, prognostic_fields, &
-         'sea_w_3d', wtheta_space, checkpoint_restart_flag)
-
   end subroutine create_coupling_fields
 
 

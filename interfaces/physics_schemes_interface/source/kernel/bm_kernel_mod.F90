@@ -14,9 +14,10 @@ module bm_kernel_mod
                                  ANY_DISCONTINUOUS_SPACE_1, &
                                  ANY_DISCONTINUOUS_SPACE_9, &
                                  GH_WRITE, DOMAIN
-  use constants_mod,      only : r_def, r_double, i_def, i_um, r_um
+  use constants_mod,      only : r_def, i_def, i_um, r_um
   use fs_continuity_mod,  only : W3, Wtheta
   use kernel_mod,         only : kernel_type
+  use empty_data_mod,     only : empty_real_data
 
   implicit none
 
@@ -49,10 +50,10 @@ module bm_kernel_mod
          arg_type(GH_FIELD, GH_REAL, GH_READWRITE, WTHETA), & ! cf_ice
          arg_type(GH_FIELD, GH_REAL, GH_READWRITE, WTHETA), & ! cf_liq
          arg_type(GH_FIELD, GH_REAL, GH_READWRITE, WTHETA), & ! cf_bulk
+         arg_type(GH_FIELD, GH_REAL, GH_WRITE,     WTHETA), & ! theta_inc
          arg_type(GH_FIELD, GH_REAL, GH_WRITE,     WTHETA), & ! sskew_bm
          arg_type(GH_FIELD, GH_REAL, GH_WRITE,     WTHETA), & ! svar_bm
-         arg_type(GH_FIELD, GH_REAL, GH_WRITE,     WTHETA), & ! svar_tb
-         arg_type(GH_FIELD, GH_REAL, GH_WRITE,     WTHETA)  & ! theta_inc
+         arg_type(GH_FIELD, GH_REAL, GH_WRITE,     WTHETA)  & ! svar_tb
          /)
     integer :: operates_on = DOMAIN
   contains
@@ -92,10 +93,10 @@ contains
   !> @param[in,out] cf_ice        Ice cloud fraction
   !> @param[in,out] cf_liq        Liquid cloud fraction
   !> @param[in,out] cf_bulk       Bulk cloud fraction
+  !> @param[in,out] theta_inc     Increment to theta
   !> @param[in,out] sskew_bm      Bimodal skewness of SD PDF
   !> @param[in,out] svar_bm       Bimodal variance of SD PDF
   !> @param[in,out] svar_tb       Unimodal variance of SD PDF
-  !> @param[in,out] theta_inc     Increment to theta
   !> @param[in]     ndf_wth       Number of degrees of freedom per cell for potential temperature space
   !> @param[in]     undf_wth      Number unique of degrees of freedom  for potential temperature space
   !> @param[in]     map_wth       Dofmap for the cell at the base of the column for potential temperature space
@@ -194,9 +195,9 @@ contains
     real(kind=r_def),    intent(inout), dimension(undf_wth) :: cf_liq
     real(kind=r_def),    intent(inout), dimension(undf_wth) :: cf_bulk
     real(kind=r_def),    intent(inout), dimension(undf_wth) :: theta_inc
-    real(kind=r_def),    intent(inout), dimension(undf_wth) :: sskew_bm
-    real(kind=r_def),    intent(inout), dimension(undf_wth) :: svar_bm
-    real(kind=r_def),    intent(inout), dimension(undf_wth) :: svar_tb
+    real(kind=r_def),    intent(inout), dimension(:), pointer :: sskew_bm
+    real(kind=r_def),    intent(inout), dimension(:), pointer :: svar_bm
+    real(kind=r_def),    intent(inout), dimension(:), pointer :: svar_tb
 
     real(kind=r_def),    intent(in),    dimension(undf_2d)  :: zh
     real(kind=r_def),    intent(in),    dimension(undf_2d)  :: zhsc
@@ -317,11 +318,29 @@ contains
         cf_liq(map_wth(1,i) + k)    = cfl_inout(i,1,k)
         cf_ice(map_wth(1,i) + k)    = cff_inout(i,1,k)
         cf_area(map_wth(1,i) + k)   = cf_inout(i,1,k)
-        sskew_bm(map_wth(1,i) + k)  = sskew_out(i,1,k)
-        svar_bm(map_wth(1,i) + k)   = svar_bm_out(i,1,k)
-        svar_tb(map_wth(1,i) + k)   = svar_turb_out(i,1,k)
       end do
     end do
+    if (.not. associated(sskew_bm, empty_real_data)) then
+      do k = 1, nlayers
+        do i = 1, seg_len
+          sskew_bm(map_wth(1,i) + k)  = sskew_out(i,1,k)
+        end do
+      end do
+    end if
+    if (.not. associated(svar_bm, empty_real_data)) then
+      do k = 1, nlayers
+        do i = 1, seg_len
+          svar_bm(map_wth(1,i) + k)   = svar_bm_out(i,1,k)
+        end do
+      end do
+    end if
+    if (.not. associated(svar_tb, empty_real_data)) then
+      do k = 1, nlayers
+        do i = 1, seg_len
+          svar_tb(map_wth(1,i) + k)   = svar_turb_out(i,1,k)
+        end do
+      end do
+    end if
     do i = 1, seg_len
       theta_inc(map_wth(1,i) + 0) = theta_inc(map_wth(1,i) + 1)
       m_v(map_wth(1,i) + 0)       = m_v(map_wth(1,i) + 0) &

@@ -54,6 +54,8 @@ contains
                                  derived_fields,    &
                                  turbulence_fields, &
                                  cloud_fields,      &
+                                 sskew_bm, svar_bm, &
+                                 svar_tb,           &
                                  dtheta_pc2_inc, name_ext )
 
     use pc2_initiation_kernel_mod, only: pc2_initiation_kernel_type
@@ -75,6 +77,7 @@ contains
     type( field_collection_type ), intent(in) :: turbulence_fields
     type( field_collection_type ), intent(in) :: cloud_fields
 
+    type( field_type ), intent(inout) :: sskew_bm, svar_bm, svar_tb
     type( field_type ), intent(inout) :: dtheta_pc2_inc
     type( field_type )                :: dmv_pc2_inc
     type( field_type )                :: dmcl_pc2_inc
@@ -106,10 +109,6 @@ contains
     type( field_type ), pointer :: tau_hom_bm  => null()
     type( field_type ), pointer :: tau_mph_bm  => null()
 
-    type( field_type ), pointer :: sskew_bm   => null()
-    type( field_type ), pointer :: svar_bm    => null()
-    type( field_type ), pointer :: svar_tb    => null()
-
     type( field_type ), pointer :: zlcl_mixed      => null()
     type( integer_field_type ), pointer :: cumulus => null()
 
@@ -132,10 +131,6 @@ contains
     call cloud_fields%get_field('tau_dec_bm', tau_dec_bm)
     call cloud_fields%get_field('tau_hom_bm', tau_hom_bm)
     call cloud_fields%get_field('tau_mph_bm', tau_mph_bm)
-
-    call cloud_fields%get_field('sskew_bm', sskew_bm)
-    call cloud_fields%get_field('svar_bm', svar_bm)
-    call cloud_fields%get_field('svar_tb', svar_tb)
 
     call turbulence_fields%get_field('z_lcl', zlcl_mixed)
     call turbulence_fields%get_field('cumulus', cumulus)

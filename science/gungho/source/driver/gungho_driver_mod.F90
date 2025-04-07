@@ -9,8 +9,12 @@
 !>
 module gungho_driver_mod
 
+  use field_parent_mod,           only : field_parent_type
+  use field_collection_iterator_mod, &
+                                  only : field_collection_iterator_type
+  use field_mod,                  only : field_type
   use base_mesh_config_mod,       only : prime_mesh_name
-  use constants_mod,              only : r_def, l_def
+  use constants_mod,              only : r_def, l_def, str_def
   use derived_config_mod,         only : l_esm_couple
   use extrusion_mod,              only : TWOD
   use field_collection_mod,       only : field_collection_type
@@ -123,9 +127,14 @@ contains
 #ifdef UM_PHYSICS
     ! For clearing IAU fields after use
     type( field_collection_type ), pointer :: field_collection_ptr
+    type( field_collection_type ), pointer :: depository
     type( field_collection_type ), pointer :: soil_fields
     type( field_collection_type ), pointer :: snow_fields
     type( field_collection_type ), pointer :: surface_fields
+
+    type(field_collection_iterator_type)  :: iterator
+    class( field_parent_type ), pointer :: field_ptr
+    character(str_def) :: name
 
     nullify( field_collection_ptr, soil_fields, snow_fields, surface_fields )
 #endif
@@ -191,7 +200,20 @@ contains
 
       call update_iau_alg( modeldb, twod_mesh )
       field_collection_ptr => modeldb%fields%get_field_collection("iau_fields")
-      call field_collection_ptr%clear()
+      depository => modeldb%fields%get_field_collection("depository")
+      call iterator%initialise(field_collection_ptr)
+      do
+        if ( .not.iterator%has_next() ) exit
+        field_ptr => iterator%next()
+
+        select type(field_ptr)
+        type is (field_type)
+          name = trim(adjustl( field_ptr%get_name() ))
+          call field_collection_ptr%remove_field(name)
+          call depository%remove_field(name)
+        end select
+      end do
+      field_ptr => null()
 
     end if
 
@@ -205,7 +227,20 @@ contains
                              soil_fields,                       &
                              snow_fields )
 
-      call field_collection_ptr%clear()
+      depository => modeldb%fields%get_field_collection("depository")
+      call iterator%initialise(field_collection_ptr)
+      do
+        if ( .not.iterator%has_next() ) exit
+        field_ptr => iterator%next()
+
+        select type(field_ptr)
+        type is (field_type)
+          name = trim(adjustl( field_ptr%get_name() ))
+          call field_collection_ptr%remove_field(name)
+          call depository%remove_field(name)
+        end select
+      end do
+      field_ptr => null()
 
     end if
 
@@ -240,7 +275,7 @@ contains
     type(mesh_type), pointer :: mesh      => null()
     type(mesh_type), pointer :: twod_mesh => null()
 
-#ifdef COUPLED
+#if defined(COUPLED) || defined(UM_PHYSICS)
     type( field_collection_type ), pointer :: depository => null()
 #endif
 
@@ -256,6 +291,10 @@ contains
     type( field_collection_type ), pointer :: field_collection_ptr
     type( field_collection_type ), pointer :: surface_fields
     type( field_collection_type ), pointer :: ancil_fields
+
+    type(field_collection_iterator_type)  :: iterator
+    class( field_parent_type ), pointer :: field_ptr
+    character(str_def) :: name
 
     nullify( field_collection_ptr, surface_fields, ancil_fields )
 
@@ -331,7 +370,20 @@ contains
       else if ( modeldb%clock%get_step() > calc_iau_ts_end( modeldb%clock ) ) then
 
         field_collection_ptr => modeldb%fields%get_field_collection("iau_fields")
-        call field_collection_ptr%clear()
+        depository => modeldb%fields%get_field_collection("depository")
+        call iterator%initialise(field_collection_ptr)
+        do
+          if ( .not.iterator%has_next() ) exit
+          field_ptr => iterator%next()
+
+          select type(field_ptr)
+          type is (field_type)
+            name = trim(adjustl( field_ptr%get_name() ))
+            call field_collection_ptr%remove_field(name)
+            call depository%remove_field(name)
+          end select
+        end do
+        field_ptr => null()
 
       end if
 

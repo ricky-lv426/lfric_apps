@@ -51,19 +51,16 @@ contains
   !> @param[in,out] mr             mixing ratios
   !> @param[in]     theta          Potential temperature
   !> @param[in]     u              3D wind field
-  !> @param[in,out] visc_m         Smag diffusion coef for momentum
-  !> @param[in,out] visc_h         Smag diffusion coef for heat
   !> @param[in]     derived_fields Group of derived fields
   !> @param[in]     rho            Density
   !> @param[in]     dt             The model timestep length
-subroutine smagorinsky_alg(dtheta_io, du_io, mr, theta, u, visc_m, &
-                             visc_h, derived_fields, rho, dt )
+subroutine smagorinsky_alg(dtheta_io, du_io, mr, theta, u, &
+                           derived_fields, rho, dt )
 
     implicit none
 
     ! Prognostic fields
     type( field_type ), intent(inout) :: du_io, dtheta_io
-    type( field_type ), intent(inout) :: visc_m, visc_h
     type( field_type ), intent(inout) :: mr ( nummr )
 
     type( field_collection_type ), intent(in) :: derived_fields
@@ -75,6 +72,8 @@ subroutine smagorinsky_alg(dtheta_io, du_io, mr, theta, u, visc_m, &
     type( field_type ) :: du, dtheta
 
     type( field_type ), pointer :: shear => null()
+    type( field_type ), pointer :: visc_h
+    type( field_type ), pointer :: visc_m
     type( field_type ), pointer :: height_w2 => null()
     type( field_type ), pointer :: height_w1 => null()
     type( field_type ), pointer :: delta => null()
@@ -100,6 +99,8 @@ subroutine smagorinsky_alg(dtheta_io, du_io, mr, theta, u, visc_m, &
     call du%initialise( u%get_function_space() )
     call invoke(setval_c(du,0.0_r_def))
     call dtheta%initialise( theta%get_function_space() )
+    call derived_fields%get_field('visc_h', visc_h)
+    call derived_fields%get_field('visc_m', visc_m)
 
     height_w1 => get_height(W1, mesh%get_id())
     height_w2 => get_height(W2, mesh%get_id())

@@ -328,7 +328,7 @@ contains
       ! surface pressure
       p_star(1,1)    = p_zero*(exner_in_wth(map_wth(1) + 0))**(1.0_r_def/kappa)
       ! level 1 of aerosol (using the standard default of 10 for now)
-      aerosol1(1,1)  = murk(map_wth(1)+0)
+      if (murk_visibility) aerosol1(1,1)  = murk(map_wth(1)+0)
       ! copy of screen variables
       t1p5m_loc(1,1)   = t1p5m(map_2d(1))
       q1p5m_loc(1,1)   = q1p5m(map_2d(1))

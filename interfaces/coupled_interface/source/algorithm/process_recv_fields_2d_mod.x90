@@ -55,12 +55,13 @@ module process_recv_fields_2d_mod
    type( field_type ), pointer        :: melt_pond_depth_ptr
    type( field_type ), pointer        :: sea_u_current_ptr
    type( field_type ), pointer        :: sea_v_current_ptr
-   type( field_type ), pointer        :: sea_u_w3_ptr
-   type( field_type ), pointer        :: sea_v_w3_ptr
-   type( field_type ), pointer        :: sea_w_w3_ptr
+   type( field_type )                 :: sea_u_w3
+   type( field_type )                 :: sea_v_w3
+   type( field_type )                 :: sea_w_wth
    type( field_type ), pointer        :: sea_current_w2_ptr
    type( field_type ), pointer        :: dA
    type( field_type ), pointer        :: theta_ptr
+   type( field_type ), pointer        :: u_w3_ptr
    type( integer_field_type ), pointer        :: ocn_cpl_point_ptr
    type(mesh_type), pointer :: mesh
 
@@ -75,32 +76,36 @@ module process_recv_fields_2d_mod
    call dcpl_rcv%get_field("lf_pond_depth", melt_pond_depth_ptr)
    call dcpl_rcv%get_field("lf_sunocean",sea_u_current_ptr)
    call dcpl_rcv%get_field("lf_svnocean",sea_v_current_ptr)
-   call depository%get_field("sea_u_3d",sea_u_w3_ptr)
-   call depository%get_field("sea_v_3d",sea_v_w3_ptr)
-   call depository%get_field("sea_w_3d",sea_w_w3_ptr)
    call depository%get_field("sea_current_w2",sea_current_w2_ptr)
    call depository%get_field("theta",theta_ptr)
+   call depository%get_field("u_in_w3",u_w3_ptr)
    call depository%get_field("ocn_cpl_point",ocn_cpl_point_ptr)
 
    mesh => theta_ptr%get_mesh()
    dA => get_da_at_w2( mesh%get_id() )
+   call u_w3_ptr%copy_field_properties(sea_u_w3)
+   call u_w3_ptr%copy_field_properties(sea_v_w3)
+   call theta_ptr%copy_field_properties(sea_w_wth)
 
    ! Prepare to convert W3 ocean velocities to W2 by initialising our
    ! various work arrays to zero.
-   call invoke(setval_c(sea_u_w3_ptr, 0.0_r_def ),     &
-               setval_c(sea_v_w3_ptr, 0.0_r_def ),     &
-               setval_c(sea_w_w3_ptr, 0.0_r_def ),     &
+   call invoke(setval_c(sea_u_w3,  0.0_r_def ),        &
+               setval_c(sea_v_w3,  0.0_r_def ),        &
+               setval_c(sea_w_wth, 0.0_r_def ),        &
                setval_c(sea_current_w2_ptr, 0.0_r_def) &
               ) ! Close invoke
 
    ! Move our incoming U and V components to the bottom
    ! level of 3d equivalent fields
-   call invoke(multi_insert_kernel_type(sea_u_w3_ptr, sea_u_current_ptr, 1, 1), &
-               multi_insert_kernel_type(sea_v_w3_ptr, sea_v_current_ptr, 1, 1)  &
+   call invoke(multi_insert_kernel_type(sea_u_w3, sea_u_current_ptr, 1, 1), &
+               multi_insert_kernel_type(sea_v_w3, sea_v_current_ptr, 1, 1)  &
               )
 
    ! Convert U/V (and W) from W3 to W2
-   call set_wind( sea_current_w2_ptr, sea_u_w3_ptr, sea_v_w3_ptr, sea_w_w3_ptr )
+   call set_wind( sea_current_w2_ptr, sea_u_w3, sea_v_w3, sea_w_wth )
+   call sea_u_w3%field_final()
+   call sea_v_w3%field_final()
+   call sea_w_wth%field_final()
 
    ! set_wind produces values in terms of fluxes, which are not appropriate
    ! for direct use in the things we need (JULES). We must convert the resulting

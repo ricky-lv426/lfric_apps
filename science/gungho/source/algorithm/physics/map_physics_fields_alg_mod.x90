@@ -76,7 +76,7 @@ contains
     type( field_type ), pointer :: u_in_w3_star => null()
     type( field_type ), pointer :: v_in_w3_star => null()
     type( field_type ), pointer :: u_physics => null()
-    type( field_type ), pointer :: u_physics_star => null()
+    type( field_type ), pointer :: u_star => null()
     type( field_type ), pointer :: velocity_w2v => null()
     type( field_type ), pointer :: shear => null()
     type( field_type ), pointer :: dA => null()
@@ -168,12 +168,12 @@ contains
          convection_placement == convection_placement_slow) then
       ! Set up predictors with start of timestep variables
       call derived_fields%get_field('theta_star', theta_star)
-      call derived_fields%get_field('u_physics_star', u_physics_star)
+      call derived_fields%get_field('u_star', u_star)
       call derived_fields%get_field('u_in_w3_star', u_in_w3_star)
       call derived_fields%get_field('v_in_w3_star', v_in_w3_star)
       call invoke(setval_X(theta_star, theta),                                &
-                  setval_X(u_physics_star, u_physics),                        &
-                  setval_X(u_in_w3_star, u_in_w3),                          &
+                  setval_X(u_star, u),                                        &
+                  setval_X(u_in_w3_star, u_in_w3),                            &
                   setval_X(v_in_w3_star, v_in_w3) )
     end if
 

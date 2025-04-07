@@ -24,6 +24,8 @@ module initialise_diagnostics_mod
   ! field status indicators
   character(str_def), parameter :: activated                                  &
     = 'Activated'     ! needed as a dependency
+  character(str_def), parameter :: deactivated                                &
+    = 'Deactivated'   ! needed as a dependency
   character(str_def), parameter :: enabled                                    &
     = 'Enabled'       ! dynamically enabled, will be sampled
   character(str_def), parameter :: disabled                                   &
@@ -62,19 +64,22 @@ contains
   !> @param[in, optional] activate         Force-activate field
   !> @param[in, optional] force_mesh       Override derived mesh
   !> @param[in, optional] force_rad_levels Override derived radiation levels
+  !> @param[in, optional] deactivate       Force-deactivate field
   !> @return                               Sampling status of the field
   function init_diagnostic_field(field, unique_id,                            &
-    activate, force_mesh, force_rad_levels) result (sampling_on)
+    activate, force_mesh, force_rad_levels, deactivate) result (sampling_on)
 
     implicit none
 
     type(field_type),                   intent(out) :: field
     character(*),                       intent(in)  :: unique_id
     logical(l_def), optional,           intent(in)  :: activate
+    logical(l_def), optional,           intent(in)  :: deactivate
     type(mesh_type), pointer, optional, intent(in)  :: force_mesh
     integer(kind=i_def), optional,      intent(in)  :: force_rad_levels
 
     logical(kind=l_def) :: is_activated
+    logical(kind=l_def) :: is_deactivated
     logical(kind=l_def) :: sampling_on
     logical(kind=l_def) :: active
     character(str_def)  :: status
@@ -86,14 +91,23 @@ contains
 
     ! field activation status
     is_activated = .false.
+    is_deactivated = .false.
     if (present(activate)) then
       if (activate) then
         is_activated = .true.
       end if
     end if
+    if (present(deactivate)) then
+      if (deactivate) then
+        is_deactivated = .true.
+      end if
+    end if
     if (is_activated) then
       active = .true.
       status = activated
+    else if (is_deactivated) then
+      active = .false.
+      status = deactivated
     else
       active = sampling_on
       if (active) then

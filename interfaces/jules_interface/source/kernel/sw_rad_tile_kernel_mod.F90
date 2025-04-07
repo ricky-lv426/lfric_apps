@@ -587,10 +587,12 @@ subroutine sw_rad_tile_code(nlayers, seg_len,                       &
   end do ! i
 
   ! Observed albedo
-  do l = 1, land_field
-    psparms%albobs_vis_gb(l) = real(albedo_obs_vis(map_2d(1,ainfo%land_index(l))), r_um)
-    psparms%albobs_nir_gb(l) = real(albedo_obs_nir(map_2d(1,ainfo%land_index(l))), r_um)
-  end do ! l
+  if (l_albedo_obs) then
+    do l = 1, land_field
+      psparms%albobs_vis_gb(l) = real(albedo_obs_vis(map_2d(1,ainfo%land_index(l))), r_um)
+      psparms%albobs_nir_gb(l) = real(albedo_obs_nir(map_2d(1,ainfo%land_index(l))), r_um)
+    end do ! l
+  end if
 
   ! Lying snow mass on land tiles
   do l = 1, land_field

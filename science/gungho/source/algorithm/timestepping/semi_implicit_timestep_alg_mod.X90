@@ -173,13 +173,8 @@ module semi_implicit_timestep_alg_mod
     type( field_type ) :: dtheta, dtheta_cld ! increment to theta
     type( field_type ) :: du ! increment to u
     type( field_type ) :: wind_prev  ! u from previous iteration used for cheap transport update
-    type( field_type ) :: wind_fv_inc  ! u fv transport increment used for cheap transport update
-    type( field_type ) :: theta_fv_inc ! theta fv transport increment to change to weak form
-
     type( r_tran_field_type ) :: total_dry_flux
 
-    type( field_type ) :: visc_m ! Smagorinsky diffusion coefficient for momentum
-    type( field_type ) :: visc_h ! Smagorinsky diffusion coefficient for scalars
   contains
     private
 
@@ -464,10 +459,8 @@ contains
     call theta%copy_field_properties(self%dtheta)
     call theta%copy_field_properties(self%dtheta_cld)
     call invoke(setval_c(self%dtheta_cld, 0.0_r_def))
-    call theta%copy_field_properties(self%theta_fv_inc)
     call u%copy_field_properties(self%du)
     call u%copy_field_properties(self%wind_prev)
-    call u%copy_field_properties(self%wind_fv_inc)
 
     call self%total_dry_flux%initialise( u%get_function_space() )
 
@@ -478,17 +471,6 @@ contains
     else
       call set_bundle_scalar(0.0_r_def, self%mr_n, nummr)
       call set_bundle_scalar(0.0_r_def, self%mr_after_slow, nummr)
-    end if
-
-    if ( use_physics ) then
-      ! Set up the diffusion coefficient fields to be in the same space as theta
-      call theta%copy_field_properties( self%visc_m )
-      call theta%copy_field_properties( self%visc_h )
-      if ( smagorinsky) then
-        ! Initialise to zero
-        call invoke( setval_c(self%visc_m , 0.0_r_def),  &
-                     setval_c(self%visc_h , 0.0_r_def) )
-      end if
     end if
 
     !--------------------------------------------------------------------
@@ -753,7 +735,6 @@ contains
       end if
 
       call slow_physics( modeldb, self%du, self%dtheta, self%mr_after_slow,   &
-                         self%visc_m, self%visc_h,                            &
                          self%state_n(igh_t), self%state_n(igh_u),            &
                          self%state_n(igh_d), self%state_n(igh_p), moist_dyn, &
                          self%mr_n, derived_fields, radiation_fields,         &
@@ -827,10 +808,12 @@ contains
           call copy_bundle(self%rhs_adv, self%adv_inc_prev, bundle_size)
           ! Update advected state, moisture, and tracers to be transported
           ! in the next outer iteration transport call
-          call mass_matrix_solver_alg( self%wind_fv_inc, self%rhs_adv(igh_u) )
+          call mass_matrix_solver_alg( self%du, self%rhs_adv(igh_u) )
           call invoke( inc_X_plus_Y(self%advected_state(igh_d), self%rhs_adv(igh_d) ), &
                        inc_X_plus_Y(self%advected_state(igh_t), self%rhs_adv(igh_t) ), &
-                       inc_X_plus_Y(self%advected_state(igh_u), self%wind_fv_inc ) )
+                       inc_X_plus_Y(self%advected_state(igh_u), self%du ) )
+          call adv_tracer_all_outer_after_slow%clear()
+          call con_tracer_all_outer_after_slow%clear()
           call conditional_collection_copy(adv_tracer_all_outer_after_slow, &
                       generic_fields_to_copy=adv_tracer_all_outer,          &
                       field_list=adv_tracer_all_outer)
@@ -848,10 +831,10 @@ contains
         end if
 
         ! Convert theta increment to weak form
-        call invoke( setval_X(self%theta_fv_inc, self%rhs_adv(igh_t)),           &
-                     setval_c(self%rhs_adv(igh_t), 0.0_r_def),                   &
-                     dg_inc_matrix_vector_kernel_type(self%rhs_adv(igh_t),       &
-                                                      self%theta_fv_inc, mm_wt) )
+        call invoke( setval_X(self%dtheta, self%rhs_adv(igh_t)),               &
+                     setval_c(self%rhs_adv(igh_t), 0.0_r_def),                 &
+                     dg_inc_matrix_vector_kernel_type(self%rhs_adv(igh_t),     &
+                                                      self%dtheta, mm_wt) )
 
         ! Compute the time-level n+1 dynamics terms
         call rhs_alg( self%rhs_np1, -varalpha*cast_dt,            &
@@ -888,7 +871,7 @@ contains
         call fast_physics(self%du, self%dtheta, mr,                            &
                           self%state_n(igh_t), self%state_n(igh_d),            &
                           self%state_n(igh_u), self%state_n(igh_p),            &
-                          self%mr_n, self%visc_m, self%visc_h, derived_fields, &
+                          self%mr_n, derived_fields,                           &
                           radiation_fields, microphysics_fields,               &
                           orography_fields, turbulence_fields,                 &
                           convection_fields, cloud_fields,                     &
@@ -898,7 +881,7 @@ contains
 
         if (smagorinsky .and. smagorinsky_placement == smagorinsky_placement_outer) then
           call smagorinsky_alg(self%dtheta, self%du, mr, self%state(igh_t), &
-                               self%state(igh_u), self%visc_m, self%visc_h, &
+                               self%state(igh_u),                           &
                                derived_fields, self%state(igh_d),           &
                                cast_dt)
         end if
@@ -1037,6 +1020,10 @@ contains
     !--------------------------------------------------------------------
     ! End of Outer (advection) loop
     !--------------------------------------------------------------------
+    call adv_tracer_all_outer_after_slow%clear()
+    call adv_tracer_last_outer_after_slow%clear()
+    call con_tracer_all_outer_after_slow%clear()
+    call con_tracer_last_outer_after_slow%clear()
 
     if (transport_ageofair) then
       call con_tracer_last_outer%get_field('ageofair', ageofair)
@@ -1046,8 +1033,8 @@ contains
     !--------------------------------------------------------------------
     ! Apply mixing
     !--------------------------------------------------------------------
-    call mixing_alg(mr, self%state(igh_t),                                       &
-                    self%state(igh_u), self%visc_m, self%visc_h, derived_fields, &
+    call mixing_alg(mr, self%state(igh_t),                                     &
+                    self%state(igh_u), derived_fields,                         &
                     self%state(igh_d), cast_dt )
 
     ! ----------------------------------------------------------------------
@@ -1154,11 +1141,6 @@ contains
     call self%dtheta%field_final()
     call self%du%field_final()
     call self%total_dry_flux%field_final()
-
-    if ( use_physics ) then
-      call self%visc_m%field_final()
-      call self%visc_h%field_final()
-    end if
 
     return
   end subroutine semi_implicit_alg_final

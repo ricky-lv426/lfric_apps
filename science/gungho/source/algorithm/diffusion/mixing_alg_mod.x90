@@ -19,12 +19,10 @@ contains
   !> @param[in,out] mr             mixing ratios
   !> @param[in,out] theta          Potential temperature
   !> @param[in,out] u              3D wind field
-  !> @param[in,out] visc_m         Smag diffusion coef for momentum
-  !> @param[in,out] visc_h         Smag diffusion coef for heat
   !> @param[in]     derived_fields Group of derived fields
   !> @param[in]     rho            Density
   !> @param[in]     dt             The model timestep length
-  subroutine mixing_alg(mr, theta, u, visc_m, visc_h, derived_fields, &
+  subroutine mixing_alg(mr, theta, u, derived_fields, &
                         rho, dt)
 
     use constants_mod,                 only: i_def,r_def
@@ -46,7 +44,6 @@ contains
 
     ! Prognostic fields
     type( field_type ), intent(inout) :: u, theta
-    type( field_type ), intent(inout) :: visc_m, visc_h
     type( field_type ), intent(inout) :: mr ( nummr )
 
     type( field_collection_type ), intent(in) :: derived_fields
@@ -71,8 +68,7 @@ contains
       call du%initialise( u%get_function_space() )
       call invoke( setval_c(dtheta, 0.0_r_def), &
                    setval_c(du, 0.0_r_def) )
-      call smagorinsky_alg(dtheta, du, mr, theta, u, visc_m, visc_h, &
-                                            derived_fields, rho, dt)
+      call smagorinsky_alg(dtheta, du, mr, theta, u, derived_fields, rho, dt)
       call invoke( inc_X_plus_Y( theta, dtheta ), &
                    inc_X_plus_Y( u,     du ) )
 

@@ -119,7 +119,7 @@ contains
     type( field_type ), pointer :: wetrho_in_w2   => null()
     type( field_type ), pointer :: theta_star     => null()
     type( field_type ), pointer :: u_physics      => null()
-    type( field_type ), pointer :: u_physics_star => null()
+    type( field_type ), pointer :: u_star
 
     type( field_type ), pointer :: zh             => null()
     type( field_type ), pointer :: zhsc           => null()
@@ -192,6 +192,7 @@ contains
     type( field_type ), pointer :: rdz_w3     => null()
 
     ! Local variables
+    type( field_type ) :: u_physics_star
     type( field_type ) :: du_conv_w2, dw_conv
     type( field_type ) :: dissip, diss_u, diss_v, diss_w
     type( field_type ) :: wind10m_w2, u10m, v10m, w10m, u10m2, v10m2
@@ -221,7 +222,7 @@ contains
     call derived_fields%get_field('wetrho_in_w2', wetrho_in_w2)
     call derived_fields%get_field('theta_star', theta_star)
     call derived_fields%get_field('u_physics', u_physics)
-    call derived_fields%get_field('u_physics_star', u_physics_star)
+    call derived_fields%get_field('u_star', u_star)
 
     ! Unpack turbulence fields
     call turbulence_fields%get_field('zh', zh)
@@ -322,6 +323,7 @@ contains
       call theta%copy_field_properties(dw_conv)
       call invoke(setval_c(dw_conv, 0.0_r_def) )
       call set_wind(du_conv_w2, du_conv, dv_conv, dw_conv)
+      call dw_conv%field_final()
       ! Set wind provides output in dynamics quantites, need to remove
       ! dA scaling for physics
       call invoke(inc_X_divideby_Y(du_conv_w2, dA) )
@@ -338,12 +340,14 @@ contains
     call tau_ssi_w2%copy_field_properties(wind10m_w2)
     call tau_ssi_w2%copy_field_properties(wind10m_neut_w2)
     call tau_ssi_w2%copy_field_properties(pseudotau_w2)
+    call u_star%copy_field_properties(u_physics_star)
 
     call invoke(setval_c(du_bl, 0.0_r_def),                                    &
                 setval_c(dissip, 0.0_r_def),                                   &
                 setval_c(wind10m_w2, 0.0_r_def),                               &
                 setval_c(wind10m_neut_w2, 0.0_r_def),                          &
                 setval_c(pseudotau_w2, 0.0_r_def),                             &
+                X_divideby_Y(u_physics_star, u_star, dA),                      &
 
                 ! LFRic calculation of du on cell faces
                 bl_imp_du_kernel_type(outer, du_bl, dissip, tau_w2,            &
@@ -357,10 +361,14 @@ contains
                 inc_X_times_Y(du_bl, dA),                                      &
                 inc_X_times_Y(dissip, dA) )
 
+    call u_physics_star%field_final()
+
     if (fric_heating) then
       ! Calculate dissipation rates at cell centre
       call map_physics_winds(diss_u, diss_v, diss_w, dissip)
     end if
+    call dissip%field_final()
+    call diss_w%field_final()
 
     call theta%copy_field_properties(dqw)
     call theta%copy_field_properties(dtl)

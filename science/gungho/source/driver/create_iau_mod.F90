@@ -19,6 +19,7 @@ module create_iau_mod
   use driver_modeldb_mod,         only : modeldb_type
   use lfric_xios_read_mod,        only : read_field_generic
   use init_time_axis_mod,         only : setup_field
+  use section_choice_config_mod,  only : iau_surf
 #ifdef UM_PHYSICS
   use iau_config_mod,             only : iau_wet_density
   use nlsizes_namelist_mod,       only : sm_levels
@@ -111,29 +112,31 @@ module create_iau_mod
 
     call log_event( 'Create IAU land surface fields', LOG_LEVEL_INFO )
 
-    call modeldb%fields%add_empty_field_collection("iau_surf_fields")
-    iau_surf_fields => modeldb%fields%get_field_collection("iau_surf_fields")
+    if (iau_surf) then
+      call modeldb%fields%add_empty_field_collection("iau_surf_fields")
+      iau_surf_fields => modeldb%fields%get_field_collection("iau_surf_fields")
 
-    checkpoint_restart_flag = .false.
-    read_behaviour => read_field_generic
+      checkpoint_restart_flag = .false.
+      read_behaviour => read_field_generic
 
 #ifdef UM_PHYSICS
-    call setup_field( iau_surf_fields, depository, prognostic_fields, &
+      call setup_field( iau_surf_fields, depository, prognostic_fields, &
          "soil_temperature_inc", W3, mesh, checkpoint_restart_flag, &
          twod_mesh, read_behaviour=read_behaviour, twod=.true., ndata=sm_levels )
 
-    call setup_field( iau_surf_fields, depository, prognostic_fields, &
+      call setup_field( iau_surf_fields, depository, prognostic_fields, &
          "soil_moisture_inc", W3, mesh, checkpoint_restart_flag, &
          twod_mesh, read_behaviour=read_behaviour, twod=.true., ndata=sm_levels )
 
-    call setup_field( iau_surf_fields, depository, prognostic_fields, &
+      call setup_field( iau_surf_fields, depository, prognostic_fields, &
          "snow_layer_temp_inc", W3, mesh, checkpoint_restart_flag, &
          twod_mesh, read_behaviour=read_behaviour, twod=.true., ndata=snow_lev_tile )
 
-    call setup_field( iau_surf_fields, depository, prognostic_fields, &
+      call setup_field( iau_surf_fields, depository, prognostic_fields, &
          "tile_temperature_inc", W3, mesh, checkpoint_restart_flag, &
          twod_mesh, read_behaviour=read_behaviour, twod=.true., ndata=n_land_tile )
 #endif
+    end if
 
     nullify( iau_fields, iau_surf_fields )
 

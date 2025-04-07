@@ -246,8 +246,7 @@ contains
     call chemistry_fields%get_field('rb', rb)
     call chemistry_fields%get_field('tio', tio)
     call chemistry_fields%get_field('vo', vo)
-    if ( glomap_mode == glomap_mode_ukca           .or.  &
-         glomap_mode == glomap_mode_dust_and_clim ) then
+    if ( glomap_mode == glomap_mode_ukca ) then
       ! Upper limit for H2O2 (ancillary field) only active for glomap_mode and
       !  checkpointed for offline oxidants, never advected
       call chemistry_fields%get_field('h2o2_limit', h2o2_limit)
@@ -376,8 +375,7 @@ contains
     end if
 
     ! Fields only required for aerosol chemistry (glomap_ukca)
-    if ( glomap_mode == glomap_mode_ukca           .or.  &
-         glomap_mode == glomap_mode_dust_and_clim ) then
+    if ( glomap_mode == glomap_mode_ukca ) then
       call invoke ( setval_c( h2o2_limit,     9.0e-15_r_def ),                 &
                     setval_c( dms,                0.0_r_def ),                 &
                     setval_c( so2,                0.0_r_def ),                 &

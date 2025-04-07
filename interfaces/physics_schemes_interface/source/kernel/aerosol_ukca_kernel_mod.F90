@@ -30,7 +30,7 @@ implicit none
 
 type, public, extends(kernel_type) :: aerosol_ukca_kernel_type
   private
-  type(arg_type) :: meta_args(284) = (/                     &
+  type(arg_type) :: meta_args(280) = (/                     &
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! o3p
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! o1d
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! o3
@@ -131,13 +131,11 @@ type, public, extends(kernel_type) :: aerosol_ukca_kernel_type
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! acc_sol_bc
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! acc_sol_om
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! acc_sol_ss
-       arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! acc_sol_du
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! n_cor_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! cor_sol_su
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! cor_sol_bc
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! cor_sol_om
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! cor_sol_ss
-       arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! cor_sol_du
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! n_ait_ins
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! ait_ins_bc
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! ait_ins_om
@@ -171,12 +169,10 @@ type, public, extends(kernel_type) :: aerosol_ukca_kernel_type
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_bc_acc_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_om_acc_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_ss_acc_sol
-       arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_du_acc_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_su_cor_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_bc_cor_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_om_cor_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_ss_cor_sol
-       arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_du_cor_sol
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_bc_ait_ins
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_om_ait_ins
        arg_type( GH_FIELD, GH_REAL, GH_READWRITE, WTHETA ), & ! pvol_du_acc_ins
@@ -439,13 +435,11 @@ contains
 !> @param[in,out] acc_sol_bc          Aerosol field: m.m.r. of black carbon in soluble accumulation mode
 !> @param[in,out] acc_sol_om          Aerosol field: m.m.r. of organic matter in soluble accumulation mode
 !> @param[in,out] acc_sol_ss          Aerosol field: m.m.r. of sea salt in soluble accumulation mode
-!> @param[in,out] acc_sol_du          Aerosol field: m.m.r. of dust in soluble accumulation mode
 !> @param[in,out] n_cor_sol           Aerosol field: n.m.r. of soluble coarse mode
 !> @param[in,out] cor_sol_su          Aerosol field: m.m.r. of H2SO4 in soluble coarse mode
 !> @param[in,out] cor_sol_bc          Aerosol field: m.m.r. of black carbon in soluble coarse mode
 !> @param[in,out] cor_sol_om          Aerosol field: m.m.r. of organic matter in soluble coarse mode
 !> @param[in,out] cor_sol_ss          Aerosol field: m.m.r. of sea salt in soluble coarse mode
-!> @param[in,out] cor_sol_du          Aerosol field: m.m.r. of dust in soluble coarse mode
 !> @param[in,out] n_ait_ins           Aerosol field: n.m.r. of insoluble Aitken mode
 !> @param[in,out] ait_ins_bc          Aerosol field: m.m.r. of black carbon in insoluble Aitken mode
 !> @param[in,out] ait_ins_om          Aerosol field: m.m.r. of organic matter in insoluble Aitken mode
@@ -479,12 +473,10 @@ contains
 !> @param[in,out] pvol_bc_acc_sol     Partial vol. of black carbon in accum soluble mode (m3)
 !> @param[in,out] pvol_om_acc_sol     Partial vol. of organic matter in accum soluble mode (m3)
 !> @param[in,out] pvol_ss_acc_sol     Partial vol. of seasalt in accum soluble mode (m3)
-!> @param[in,out] pvol_du_acc_sol     Partial vol. of dust in accum soluble mode (m3)
 !> @param[in,out] pvol_su_cor_sol     Partial vol. of h2so4 in coarse soluble mode (m3)
 !> @param[in,out] pvol_bc_cor_sol     Partial vol. of black carbon in coarse soluble mode (m3)
 !> @param[in,out] pvol_om_cor_sol     Partial vol. of organic matter in coarse soluble mode (m3)
 !> @param[in,out] pvol_ss_cor_sol     Partial vol. of seasalt in coarse soluble mode (m3)
-!> @param[in,out] pvol_du_cor_sol     Partial vol. of dust in coarse soluble mode (m3)
 !> @param[in,out] pvol_bc_ait_ins     Partial vol. of black carbon in aitken insoluble mode (m3)
 !> @param[in,out] pvol_om_ait_ins     Partial vol. of organic matter in aitken insoluble mode (m3)
 !> @param[in,out] pvol_du_acc_ins     Partial vol. of dust in accum insoluble mode (m3)
@@ -750,13 +742,11 @@ subroutine aerosol_ukca_code( nlayers,                                         &
                               acc_sol_bc,                                      &
                               acc_sol_om,                                      &
                               acc_sol_ss,                                      &
-                              acc_sol_du,                                      &
                               n_cor_sol,                                       &
                               cor_sol_su,                                      &
                               cor_sol_bc,                                      &
                               cor_sol_om,                                      &
                               cor_sol_ss,                                      &
-                              cor_sol_du,                                      &
                               n_ait_ins,                                       &
                               ait_ins_bc,                                      &
                               ait_ins_om,                                      &
@@ -790,12 +780,10 @@ subroutine aerosol_ukca_code( nlayers,                                         &
                               pvol_bc_acc_sol,                                 &
                               pvol_om_acc_sol,                                 &
                               pvol_ss_acc_sol,                                 &
-                              pvol_du_acc_sol,                                 &
                               pvol_su_cor_sol,                                 &
                               pvol_bc_cor_sol,                                 &
                               pvol_om_cor_sol,                                 &
                               pvol_ss_cor_sol,                                 &
-                              pvol_du_cor_sol,                                 &
                               pvol_bc_ait_ins,                                 &
                               pvol_om_ait_ins,                                 &
                               pvol_du_acc_ins,                                 &
@@ -1389,13 +1377,11 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_bc
   real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_om
   real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_ss
-  real(kind=r_def), intent(in out), dimension(undf_wth) :: acc_sol_du
   real(kind=r_def), intent(in out), dimension(undf_wth) :: n_cor_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_su
   real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_bc
   real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_om
   real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_ss
-  real(kind=r_def), intent(in out), dimension(undf_wth) :: cor_sol_du
   real(kind=r_def), intent(in out), dimension(undf_wth) :: n_ait_ins
   real(kind=r_def), intent(in out), dimension(undf_wth) :: ait_ins_bc
   real(kind=r_def), intent(in out), dimension(undf_wth) :: ait_ins_om
@@ -1429,12 +1415,10 @@ subroutine aerosol_ukca_code( nlayers,                                         &
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_bc_acc_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_om_acc_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_ss_acc_sol
-  real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_du_acc_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_su_cor_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_bc_cor_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_om_cor_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_ss_cor_sol
-  real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_du_cor_sol
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_bc_ait_ins
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_om_ait_ins
   real(kind=r_def), intent(in out), dimension(undf_wth) :: pvol_du_acc_ins
@@ -2398,8 +2382,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
     case(fldname_acc_sol_du)
       do i = 1, seg_len
         do k = 1, nlayers
-          tracer( i, 1, k, m ) =                                               &
-            real( acc_sol_du( map_wth(1,i) + k ), r_um )
+          tracer( i, 1, k, m ) = 0.0_r_um ! no prognostic, always zero
         end do
       end do
     case(fldname_n_cor_sol)
@@ -2440,8 +2423,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
     case(fldname_cor_sol_du)
       do i = 1, seg_len
         do k = 1, nlayers
-          tracer( i, 1, k, m ) =                                               &
-            real( cor_sol_du( map_wth(1,i) + k ), r_um )
+          tracer( i, 1, k, m ) = 0.0_r_um ! no prognostic, always zero
         end do
       end do
     case(fldname_n_ait_ins)
@@ -2682,8 +2664,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
     case(fldname_pvol_du_acc_sol)
       do i = 1, seg_len
         do k = 1, nlayers
-          ntp( i, 1, k, m ) =                                                  &
-            real( pvol_du_acc_sol( map_wth(1,i) + k ), r_um )
+          ntp( i, 1, k, m ) = 0.0_r_um ! no prognostic, always zero
         end do
       end do
     case(fldname_pvol_wat_acc_sol)
@@ -2724,8 +2705,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
     case(fldname_pvol_du_cor_sol)
       do i = 1, seg_len
         do k = 1, nlayers
-          ntp( i, 1, k, m ) =                                                  &
-            real( pvol_du_cor_sol( map_wth(1,i) + k ), r_um )
+          ntp( i, 1, k, m ) = 0.0_r_um ! no prognostic, always zero
         end do
       end do
     case(fldname_pvol_wat_cor_sol)
@@ -5144,14 +5124,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
         acc_sol_ss( map_wth(1,i) + 0 ) = acc_sol_ss( map_wth(1,i) + 1 )
       end do
     case(fldname_acc_sol_du)
-      do i = 1, seg_len
-        do k = 1, nlayers
-          acc_sol_du( map_wth(1,i) + k ) =                                     &
-            real( tracer( i, 1, k, m ), r_def )
-        end do
-
-        acc_sol_du( map_wth(1,i) + 0 ) = acc_sol_du( map_wth(1,i) + 1 )
-      end do
+      ! No field to update, always zero
     case(fldname_n_cor_sol)
       do i = 1, seg_len
         do k = 1, nlayers
@@ -5198,14 +5171,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
         cor_sol_ss( map_wth(1,i) + 0 ) = cor_sol_ss( map_wth(1,i) + 1 )
       end do
     case(fldname_cor_sol_du)
-      do i = 1, seg_len
-        do k = 1, nlayers
-          cor_sol_du( map_wth(1,i) + k ) =                                     &
-            real( tracer( i, 1, k, m ), r_def )
-        end do
-
-        cor_sol_du( map_wth(1,i) + 0 ) = cor_sol_du( map_wth(1,i) + 1 )
-      end do
+      ! No field to update, always zero
     case(fldname_n_ait_ins)
       do i = 1, seg_len
         do k = 1, nlayers
@@ -5487,15 +5453,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
                                         pvol_ss_acc_sol( map_wth(1,i) + 1 )
       end do
     case(fldname_pvol_du_acc_sol)
-      do i = 1, seg_len
-        do k = 1, nlayers
-          pvol_du_acc_sol( map_wth(1,i) + k ) =                                &
-                                               real( ntp( i, 1, k, m ), r_def )
-        end do
-
-        pvol_du_acc_sol( map_wth(1,i) + 0 ) =                                  &
-                                        pvol_du_acc_sol( map_wth(1,i) + 1 )
-      end do
+      ! No field to update, always zero
     case(fldname_pvol_wat_acc_sol)
       do i = 1, seg_len
         do k = 1, nlayers
@@ -5543,14 +5501,7 @@ subroutine aerosol_ukca_code( nlayers,                                         &
                                         pvol_ss_cor_sol( map_wth(1,i) + 1 )
       end do
     case(fldname_pvol_du_cor_sol)
-      do i = 1, seg_len
-        do k = 1, nlayers
-          pvol_du_cor_sol( map_wth(1,i) + k ) = real( ntp( i, 1, k, m ), r_def )
-        end do
-
-        pvol_du_cor_sol( map_wth(1,i) + 0 ) =                                  &
-                                        pvol_du_cor_sol( map_wth(1,i) + 1 )
-      end do
+      ! No field to update, always zero
     case(fldname_pvol_wat_cor_sol)
       do i = 1, seg_len
         do k = 1, nlayers

@@ -146,8 +146,6 @@ module tl_si_timestep_alg_mod
   type( field_type ), allocatable :: ls_mr_itns(:,:,:)
   type( field_type ), allocatable :: ls_moist_dyn_itns(:,:,:)
 
-  type( field_type ) :: visc_m ! Smagorinsky diffusion coefficient for momentum
-  type( field_type ) :: visc_h ! Smagorinsky diffusion coefficient for scalars
   type( field_type ) :: theta_fv_inc ! theta fv transport increment to change to weak form
 
   public  :: tl_semi_implicit_alg_init
@@ -838,7 +836,7 @@ contains
     ! Apply mixing
     !--------------------------------------------------------------------
     call mixing_alg(mr, state(igh_t),                             &
-                    state(igh_u), visc_m, visc_h, derived_fields, &
+                    state(igh_u), derived_fields,                 &
                     state(igh_d), cast_dt )
 
     ! Update derived variables for time level n+1

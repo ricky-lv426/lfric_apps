@@ -11,11 +11,12 @@ use argument_mod,      only: arg_type,          &
                              GH_FIELD, GH_REAL, &
                              GH_INTEGER,        &
                              GH_READ, GH_WRITE, &
-                             DOMAIN,       &
+                             DOMAIN,            &
                              ANY_DISCONTINUOUS_SPACE_9, &
                              ANY_DISCONTINUOUS_SPACE_1
 use fs_continuity_mod, only: WTHETA, W3
 use kernel_mod,        only: kernel_type
+use empty_data_mod,    only: empty_real_data
 
 implicit none
 
@@ -232,9 +233,9 @@ subroutine pc2_initiation_code( nlayers, seg_len,                  &
     real(kind=r_def), intent(in), dimension(undf_wth) :: tau_hom_bm
     real(kind=r_def), intent(in), dimension(undf_wth) :: tau_mph_bm
 
-    real(kind=r_def), intent(inout), dimension(undf_wth) :: sskew_bm
-    real(kind=r_def), intent(inout), dimension(undf_wth) :: svar_bm
-    real(kind=r_def), intent(inout), dimension(undf_wth) :: svar_tb
+    real(kind=r_def), intent(inout), dimension(:), pointer :: sskew_bm
+    real(kind=r_def), intent(inout), dimension(:), pointer :: svar_bm
+    real(kind=r_def), intent(inout), dimension(:), pointer :: svar_tb
 
     real(kind=r_def), intent(in), dimension(undf_2d)  :: zh
     real(kind=r_def), intent(in), dimension(undf_2d)  :: zhsc
@@ -492,12 +493,29 @@ subroutine pc2_initiation_code( nlayers, seg_len,                  &
         dcfl_inc_wth(map_wth(1,i)+k) = cfl_work(i,1,k) - cfl_wth(map_wth(1,i) + k)
         dcff_inc_wth(map_wth(1,i)+k) = cff_work(i,1,k) - cff_wth(map_wth(1,i) + k)
         dbcf_inc_wth(map_wth(1,i)+k) = bcf_work(i,1,k) - bcf_wth(map_wth(1,i) + k)
-
-        sskew_bm(map_wth(1,i)+k)     = sskew_out(i,1,k)
-        svar_bm(map_wth(1,i)+k)      = svar_bm_out(i,1,k)
-        svar_tb(map_wth(1,i)+k)      = svar_turb_out(i,1,k)
       end do
     end do
+    if (.not. associated(sskew_bm, empty_real_data)) then
+      do k = 1, nlayers
+        do i = 1, seg_len
+          sskew_bm(map_wth(1,i)+k)     = sskew_out(i,1,k)
+        end do
+      end do
+    end if
+    if (.not. associated(svar_bm, empty_real_data)) then
+      do k = 1, nlayers
+        do i = 1, seg_len
+          svar_bm(map_wth(1,i)+k)      = svar_bm_out(i,1,k)
+        end do
+      end do
+    end if
+    if (.not. associated(svar_tb, empty_real_data)) then
+      do k = 1, nlayers
+        do i = 1, seg_len
+          svar_tb(map_wth(1,i)+k)      = svar_turb_out(i,1,k)
+        end do
+      end do
+    end if
     do i = 1, seg_len
       dtheta_inc_wth(map_wth(1,i)+0) = dtheta_inc_wth(map_wth(1,i)+1)
       dmv_inc_wth   (map_wth(1,i)+0) = dmv_inc_wth   (map_wth(1,i)+1)
