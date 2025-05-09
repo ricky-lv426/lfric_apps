@@ -9,10 +9,10 @@
                            "module switch PrgEnv-cray PrgEnv-cray/8.4.0 ; " ~
                            "module load cpe/23.05 ; "~
                            "module switch cce cce/15.0.0 ; "~
-                           "module load lfric-cray/15.0.0/0.5 ; "~
+                           "module load lfric-cray/15.0.0/1.0.1 || true; "~
                            "export LD_LIBRARY_PATH=/opt/cray/pe/pmi/6.1.11/lib:$LD_LIBRARY_PATH" %}
 
-{% set ex1a_coupled_cce = "module unload xios/2252-o4pd7wo; module load cray-hdf5-parallel; module load cray-netcdf-hdf5parallel; module use /data/users/moci/modules_ngms/modules; module load GC4-PrgEnv/2024-01-lfric_apps_coupled_port-cpe23.05/5548.lua;" %}
+{% set ex1a_coupled_cce = "module unload xios/2701-h57fm7d || true; module load cray-hdf5-parallel; module load cray-netcdf-hdf5parallel; module use /data/users/moci/modules_ngms/modules; module load GC4-PrgEnv/2024-01-lfric_apps_coupled_port-cpe23.05/5548.lua;" %}
 
 
 
@@ -20,11 +20,6 @@
 
 {% set ex1a_coupled_run = '. $BIG_DATA_DIR/ancils/lfric_coupled/ocean/ocean_ancil_GO8p0_CORE_forcing_eORCA025 ; '~
                           'DIAG_MEAN_PERIOD="INVALID_PERIOD" ; '~
-                          'export HDF5_DEBUG=all; ' ~
-                          'export MPICH_ENV_DISPLAY=1; '~
-                          'export FI_CXI_RX_MATCH_MODE=software; '~
-                          'export FI_CXI_REQ_BUF_SIZE=12582912; '~
-                          'export MPICH_COLL_SYNC=1; '~
                           'ulimit -s unlimited' %}
 
     [[EX1A_COUPLED_BUILD_CCE]]
