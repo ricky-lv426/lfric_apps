@@ -656,7 +656,7 @@ contains
                       fluxes_data)
     call fluxes_assoc(fluxes, fluxes_data)
 
-    call jules_rivers_alloc(land_pts,rivers_data)
+    call jules_rivers_alloc(land_pts, t_i_length, t_j_length, rivers_data)
     call rivers_assoc(rivers,rivers_data)
 
     ! Chemvars for Dry deposition

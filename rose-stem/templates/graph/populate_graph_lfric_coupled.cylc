@@ -30,14 +30,14 @@
     {% do tasks_to_run.update({build2_drivers_task: task_values}) %}
 {% endif %}
 
-{# {% set build_river_task = "fcm_make_"~
+{% set build_river_task = "fcm_make_"~
                           task_ns.application~
                           "_river_"~
                           task_ns.platform~"_"~
                           task_values["build_conf"] %}
 {% if build_river_task not in tasks_to_run %}
     {% do tasks_to_run.update({build_river_task: task_values}) %}
-{% endif %} #}
+{% endif %}
 
 {% set build_ocean_task = "fcm_make_"~
                           task_ns.application~
@@ -73,9 +73,9 @@
 {% do graph_sections.append([
     build_ocean_task, build2_ocean_task
     ]) %}
-{# {% do graph_sections.append([
+{% do graph_sections.append([
     remote_init_task~task_ns.platform, build_river_task
-    ]) %} #}
+    ]) %}
 {% if application_run_task %}
     {% do graph_sections.append([
         "fcm_make2_drivers", application_run_task
@@ -83,9 +83,9 @@
     {% do graph_sections.append([
         build2_ocean_task, application_run_task
         ]) %}
-    {# {% do graph_sections.append([
+    {% do graph_sections.append([
         build_river_task, application_run_task
-        ]) %} #}
+        ]) %}
 {% endif %}
 
 

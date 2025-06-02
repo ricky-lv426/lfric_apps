@@ -22,7 +22,7 @@
 # NFIELDS : total number of fields being exchanged.
 #
  $NFIELDS
-         73
+         76
  $END
 #
 ###############################################################################
@@ -726,33 +726,33 @@ T
 ################## ATMOS TO RIVER ####################
 ######################################################
 # Surface runoff (lfric) => rivers
-# lf_rsurf surf_roff 466 3600 1 atmos_restart.nc   EXPORTED
-# 13824 1 360 180 lfricT rivT SEQ=+4
-# P  0  P  0
+lf_rsurf surf_roff 466 3600 1 atmos_restart.nc   EXPORTED
+13824 1 360 180 lfricT rivT SEQ=+4
+P  0  P  0
 #
-# MAPPING
+MAPPING
 ##
-# rmp_lfricT_to_rivT_conservative1st_dstarea_nomask.nc
+rmp_lfricT_to_rivT_conservative1st_dstarea_nomask.nc
 #######################################################
 # Sub-surface runoff (lfric) => rivers
-# lf_rsub sub_surf_roff 466 3600 1 atmos_restart.nc   EXPORTED
-# 13824 1 360 180 lfricT rivT SEQ=+4
-# P  0  P  0
+lf_rsub sub_surf_roff 466 3600 1 atmos_restart.nc   EXPORTED
+13824 1 360 180 lfricT rivT SEQ=+4
+P  0  P  0
 #
-# MAPPING
+MAPPING
 ##
-# rmp_lfricT_to_rivT_conservative1st_dstarea_nomask.nc
+rmp_lfricT_to_rivT_conservative1st_dstarea_nomask.nc
 ######################################################
 ############### RIVER TO OCEAN #######################
 ######################################################
 # River runoff
-# outflow_per_river ORunff1D 466 3600 1 atmos_restart.nc  EXPORTED
-# 1681 1 1681 1 riv3 riv3 SEQ=+3
-# R  0  R  0
+outflow_per_river ORunff1D 466 3600 1 atmos_restart.nc  EXPORTED
+1681 1 1681 1 riv3 riv3 SEQ=+3
+R  0  R  0
 #
-# BLASOLD
+BLASOLD
 ##
-# 1.0 0
+1.0 0
 #############################################################################
 #############################################################################
 #
