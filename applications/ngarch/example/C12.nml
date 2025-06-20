@@ -25,11 +25,11 @@
 !     respectively
 !===================================================================
 &mesh
-  mesh_file_prefix = 'mesh_C24'
+  mesh_file_prefix = 'mesh_C12'
   geometry         = 'spherical'
   topology         = 'periodic'
   n_meshes         = 1
-  mesh_names       = 'C24'
+  mesh_names       = 'C12'
   partition_mesh   = .false.
   coord_sys        = 'll'
   rotate_mesh      = .false.
@@ -47,7 +47,7 @@
 ! intergrid mesh maps) is advised to be left as 0 for general use.
 
 &cubedsphere_mesh
-  edge_cells          = 24
+  edge_cells          = 12
   equatorial_latitude = 0.0
   smooth_passes       = 0
 /

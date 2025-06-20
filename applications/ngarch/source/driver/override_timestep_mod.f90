@@ -17,10 +17,11 @@ module override_timestep_mod
   use timestep_method_mod, only: timestep_method_type
   use no_timestep_alg_mod, only: no_timestep_type
   use driver_modeldb_mod,  only: modeldb_type
-  use ngarch_config_mod,   only: method, method_casim, method_lfricatm
+  use ngarch_config_mod,   only: method, method_lfric_atm, method_casim, method_bl
   use log_mod,             only: log_event, LOG_LEVEL_ERROR
 
-  use casim_timestep_mod,  only: casim_timestep_type
+  use casim_timestep_mod,          only: casim_timestep_type
+  use boundary_layer_timestep_mod, only: boundary_layer_timestep_type
 
   implicit none
 
@@ -36,14 +37,17 @@ contains
     class( timestep_method_type ), pointer :: timestep_method => null()
 
     select case( method )
-      case( method_lfricatm )
+      case( method_lfric_atm )
         ! Do not overwrite the normal timestep
 
       case( method_casim )
         allocate( timestep_method, source=casim_timestep_type() )
 
+      case( method_bl )
+        allocate( timestep_method, source=boundary_layer_timestep_type() )
+
       case default
-        call log_event( "ngrch: Invalid time stepping option chosen, "// &
+        call log_event( "ngarch: Invalid time stepping option chosen, "// &
                         "stopping program! ",LOG_LEVEL_ERROR )
 
     end select
