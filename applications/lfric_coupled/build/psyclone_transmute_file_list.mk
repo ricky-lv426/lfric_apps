@@ -4,11 +4,6 @@
 # under which the code may be used.
 ##############################################################################
 
-# There are two import files for UM source. Therefore we will have two versions of the same
-# variables below so reduce redundant checks.
-# However once all of FCM source is forked into LFRic Apps, we can condense these
-# two variables into one under a single version of each, these being:
-# PSYCLONE_PHYSICS_FILES, PSYCLONE_DIRECTORIES, PSYCLONE_PHYSICS_EXCEPTION
 # File lists provided will use the transmute PSyclone method.
 # https://code.metoffice.gov.uk/trac/lfric_apps/ticket/724
 
@@ -19,9 +14,7 @@
 
 # Choose which files to Pre-proccess and PSyclone from physics / FCM UM source.
 
-export PSYCLONE_PHYSICS_FILES_IMPORT =
-
-export PSYCLONE_PHYSICS_FILES_FCM =
+export PSYCLONE_PHYSICS_FILES =
 
 ##### TRANSMUTE_INCLUDE_METHOD specify_include #####
 
@@ -33,13 +26,9 @@ export PSYCLONE_PHYSICS_FILES_FCM =
 # These files will be filtered, and will NOT be run through PSyclone.
 
 # Directories to psyclone
-export PSYCLONE_DIRECTORIES_IMPORT =
-
-export PSYCLONE_DIRECTORIES_FCM =
+export PSYCLONE_DIRECTORIES =
 
 # A general file exception list
-export PSYCLONE_PHYSICS_EXCEPTION_IMPORT =
-
-export PSYCLONE_PHYSICS_EXCEPTION_FCM =
+export PSYCLONE_PHYSICS_EXCEPTION =
 
 ##### TRANSMUTE_INCLUDE_METHOD specify_exclude #####

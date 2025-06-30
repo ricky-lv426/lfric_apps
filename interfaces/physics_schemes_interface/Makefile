@@ -84,8 +84,7 @@ unit-tests/%: export IMPORT_PARTS = $(CORE_ROOT_DIR)/infrastructure \
                                     $(APPS_ROOT_DIR)/interfaces/jules_interface \
                                     $(APPS_ROOT_DIR)/science/gungho \
                                     $(APPS_ROOT_DIR)/interfaces/socrates_interface \
-                                    $(APPS_ROOT_DIR)/interfaces/physics_schemes_interface \
-                                    $(APPS_ROOT_DIR)/science/physics_schemes
+                                    $(APPS_ROOT_DIR)/interfaces/physics_schemes_interface
 unit-tests/%: export META_FILE_DIR = $(PROJECT_DIR)/rose-meta/$(PROJECT_NAME)/$(META_VN)
 unit-tests/%: export PROGRAMS = physics_schemes_interface_unit_tests
 unit-tests/%: export PROJECT = physics_schemes_interface
