@@ -1,9 +1,8 @@
-import re
 import sys
 
 from metomi.rose.upgrade import MacroUpgrade
 
-from .version20_21 import *
+from .version21_22 import *
 
 
 class UpgradeError(Exception):
@@ -19,40 +18,16 @@ class UpgradeError(Exception):
     __str__ = __repr__
 
 
-class vn21_t596(MacroUpgrade):
-    """Upgrade macro for ticket #596 by Maggie Hendry."""
+"""
+Copy this template and complete to add your macro
 
-    BEFORE_TAG = "vn2.1"
-    AFTER_TAG = "vn2.1_t596"
+class vnXX_txxx(MacroUpgrade):
+    # Upgrade macro for <TICKET> by <Author>
+
+    BEFORE_TAG = "vnX.X"
+    AFTER_TAG = "vnX.X_txxx"
 
     def upgrade(self, config, meta_config=None):
-        # Commands From: rose-meta/jules-lfric
-        # Only used in LFRic apps
-        self.rename_setting(
-            config,
-            ["namelist:jules_surface", "check_soilm_negatives"],
-            ["namelist:surface", "check_soilm_negatives"],
-        )
-        self.rename_setting(
-            config,
-            ["namelist:jules_surface", "lake_water_conservation"],
-            ["namelist:surface", "lake_water_conservation"],
-        )
-        # jules-sea-seaice from jules-lfric being shared rather than um-atmos
-        self.rename_setting(
-            config,
-            ["namelist:surface", "amip_ice_thick"],
-            ["namelist:jules_sea_seaice", "amip_ice_thick"],
-        )
-        self.rename_setting(
-            config,
-            ["namelist:surface", "z0h_specified"],
-            ["namelist:jules_sea_seaice", "z0h_specified"],
-        )
-        self.rename_setting(
-            config,
-            ["namelist:surface", "z0m_specified"],
-            ["namelist:jules_sea_seaice", "z0m_specified"],
-        )
-
+        # Add settings
         return config, self.reports
+"""
