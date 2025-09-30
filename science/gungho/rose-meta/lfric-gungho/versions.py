@@ -49,11 +49,11 @@ class vn22_t4661(MacroUpgrade):
         return config, self.reports
 
 
-class vn221_t771(MacroUpgrade):
+class vn22_t771(MacroUpgrade):
     """Upgrade macro for ticket #771 by josephwallwork."""
 
     BEFORE_TAG = "vn2.2_t4661"
-    AFTER_TAG = "vn2.2.1_t771"
+    AFTER_TAG = "vn2.2_t771"
 
     def upgrade(self, config, meta_config=None):
         # Commands From: rose-meta/um-chemistry
