@@ -462,3 +462,17 @@ class vn22_t618(MacroUpgrade):
         )
 
         return config, self.reports
+
+
+class vn22_t788(MacroUpgrade):
+    """Upgrade macro for ticket #788 by Fred Wobus."""
+
+    BEFORE_TAG = "vn2.2_t618"
+    AFTER_TAG = "vn2.2_t788"
+
+    def upgrade(self, config, meta_config=None):
+        # Commands From: rose-meta/lfric-lfric_atm
+        """Set segmentation size for Gregory-Rowntree convection kernel"""
+        self.add_setting(config, ["namelist:physics", "conv_gr_segment"], "16")
+
+        return config, self.reports
