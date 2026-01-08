@@ -36,7 +36,7 @@ class vn30_t788(MacroUpgrade):
     """Upgrade macro for ticket #788 by Fred Wobus."""
 
     BEFORE_TAG = "vn3.0"
-    AFTER_TAG = "vn2.2_t788"
+    AFTER_TAG = "vn3.0_t788"
 
     def upgrade(self, config, meta_config=None):
         # Commands From: rose-meta/lfric-lfric_atm
