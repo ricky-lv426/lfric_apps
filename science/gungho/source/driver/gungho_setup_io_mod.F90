@@ -13,6 +13,7 @@ module gungho_setup_io_mod
   use constants_mod,             only: r_def, i_def, str_def, &
                                        str_max_filename, r_second
   use driver_modeldb_mod,        only: modeldb_type
+  use field_collection_mod,      only: field_collection_type
   use file_mod,                  only: FILE_MODE_READ, &
                                        FILE_MODE_WRITE
   use lfric_xios_file_mod,       only: lfric_xios_file_type, &
@@ -214,10 +215,18 @@ module gungho_setup_io_mod
     integer(i_def)                  :: i
     integer(i_def)                  :: time_point
 
+    type(field_collection_type), pointer :: ancil_fields
+
     integer(i_def)                  :: theta_forcing
     integer(i_def)                  :: wind_forcing
     ! Only proceed if XIOS is being used for I/O
     if (.not. use_xios_io) return
+
+    if (present(modeldb)) then
+      ancil_fields => modeldb%fields%get_field_collection("ancil_fields")
+    else
+      nullify(ancil_fields)
+    end if
 
     ! Get time configuration in integer form
     read(timestep_start,*,iostat=rc)  ts_start
@@ -377,9 +386,18 @@ module gungho_setup_io_mod
             write(ancil_fname,'(A)') trim(ancil_directory)//'/'// &
                                     trim(sst_ancil_path)
           end if
-          call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
-                                                         xios_id="sst_ancil", &
-                                                         io_mode=FILE_MODE_READ ) )
+          if (present(modeldb)) then
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                           xios_id="sst_ancil", &
+                                                           io_mode=FILE_MODE_READ, &
+                                                           operation=OPERATION_TIMESERIES, &
+                                                           fields_in_file=ancil_fields, &
+                                                           freq=1 ) )
+          else
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                           xios_id="sst_ancil", &
+                                                           io_mode=FILE_MODE_READ ) )
+          end if
         end if
 
         ! Set sea ice ancil filename from namelist
@@ -470,9 +488,18 @@ module gungho_setup_io_mod
           end if
           write(ancil_fname,'(A)') trim(aerosol_ancil_directory)//'/'// &
                                    trim(aerosols_ancil_path)
-          call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
-                                                         xios_id="aerosols_ancil", &
-                                                         io_mode=FILE_MODE_READ ) )
+          if (present(modeldb)) then
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                           xios_id="aerosols_ancil", &
+                                                           io_mode=FILE_MODE_READ, &
+                                                           operation=OPERATION_TIMESERIES, &
+                                                           fields_in_file=ancil_fields, &
+                                                           freq=1 ) )
+          else
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                           xios_id="aerosols_ancil", &
+                                                           io_mode=FILE_MODE_READ ) )
+          end if
         end if
 
       end if ! updating or a new run

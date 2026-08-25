@@ -238,7 +238,6 @@ contains
       call setup_ancil_field("tstar_sea", depository, ancil_fields, mesh, &
                               twod_mesh, twod=.true.,                   &
                               time_axis=sst_time_axis)
-      call ancil_times_list%insert_item(sst_time_axis)
     end if
 
     !=====  SEA ICE ANCILS  =====
@@ -463,8 +462,6 @@ contains
       ! The following fields will need including when dust is available in the
       ! ancillary file:
       !   acc_sol_du, cor_sol_du, n_acc_ins, acc_ins_du, n_cor_ins, cor_ins_du
-
-      call ancil_times_list%insert_item(aerosol_time_axis)
     end if
 
     !=====  EMISSION ANCILS (dust only) =====
