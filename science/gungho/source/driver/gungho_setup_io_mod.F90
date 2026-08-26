@@ -215,7 +215,8 @@ module gungho_setup_io_mod
     integer(i_def)                  :: i
     integer(i_def)                  :: time_point
 
-    type(field_collection_type), pointer :: ancil_fields
+    type(field_collection_type), pointer :: sst_ancil_fields
+    type(field_collection_type), pointer :: aerosol_ancil_fields
 
     integer(i_def)                  :: theta_forcing
     integer(i_def)                  :: wind_forcing
@@ -223,9 +224,11 @@ module gungho_setup_io_mod
     if (.not. use_xios_io) return
 
     if (present(modeldb)) then
-      ancil_fields => modeldb%fields%get_field_collection("ancil_fields")
+      sst_ancil_fields => modeldb%fields%get_field_collection("sst_ancil_fields")
+      aerosol_ancil_fields => modeldb%fields%get_field_collection("aerosol_ancil_fields")
     else
-      nullify(ancil_fields)
+      nullify(sst_ancil_fields)
+      nullify(aerosol_ancil_fields)
     end if
 
     ! Get time configuration in integer form
@@ -386,12 +389,12 @@ module gungho_setup_io_mod
             write(ancil_fname,'(A)') trim(ancil_directory)//'/'// &
                                     trim(sst_ancil_path)
           end if
-          if (present(modeldb)) then
+          if (present(modeldb) .and. ancil_option == ancil_option_updating) then
             call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
                                                            xios_id="sst_ancil", &
                                                            io_mode=FILE_MODE_READ, &
                                                            operation=OPERATION_TIMESERIES, &
-                                                           fields_in_file=ancil_fields, &
+                                                           fields_in_file=sst_ancil_fields, &
                                                            freq=1 ) )
           else
             call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
@@ -488,12 +491,12 @@ module gungho_setup_io_mod
           end if
           write(ancil_fname,'(A)') trim(aerosol_ancil_directory)//'/'// &
                                    trim(aerosols_ancil_path)
-          if (present(modeldb)) then
+          if (present(modeldb) .and. ancil_option == ancil_option_updating) then
             call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
                                                            xios_id="aerosols_ancil", &
                                                            io_mode=FILE_MODE_READ, &
                                                            operation=OPERATION_TIMESERIES, &
-                                                           fields_in_file=ancil_fields, &
+                                                           fields_in_file=aerosol_ancil_fields, &
                                                            freq=1 ) )
           else
             call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
