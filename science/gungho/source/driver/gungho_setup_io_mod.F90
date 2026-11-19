@@ -170,6 +170,16 @@ module gungho_setup_io_mod
                                        chem_scheme_strat_test,    &
                                        chem_scheme_offline_ox
   use iau_config_mod,            only: iau_use_pertinc
+  use field_collection_mod,      only: field_collection_type
+  use lfric_xios_constants_mod,  only: lx_day, lx_month
+  use init_ancils_mod,           only: aerosol_ancil_names,       &
+                                       aerosol_file_owned,        &
+                                       chloro_sea_ancil_names,    &
+                                       ozone_ancil_names,         &
+                                       ozone_file_owned,          &
+                                       sea_ice_ancil_names
+  use jules_control_init_mod,    only: pft_ancil_file_owned,      &
+                                       sea_ice_ancil_file_owned
 #endif
 
   implicit none
@@ -214,10 +224,49 @@ module gungho_setup_io_mod
     integer(i_def)                  :: i
     integer(i_def)                  :: time_point
 
+#ifdef UM_PHYSICS
+    type(field_collection_type), pointer :: aerosol_ancil_fields
+    type(field_collection_type), pointer :: plant_func_ancil_fields
+    type(field_collection_type), pointer :: sea_ancil_fields
+    type(field_collection_type), pointer :: ozone_ancil_fields
+    type(field_collection_type), pointer :: sea_ice_ancil_fields
+#endif
+
     integer(i_def)                  :: theta_forcing
     integer(i_def)                  :: wind_forcing
     ! Only proceed if XIOS is being used for I/O
     if (.not. use_xios_io) return
+
+#ifdef UM_PHYSICS
+    ! Collections of the fields read by the file objects, which were created
+    ! before the I/O context was set up
+    nullify(aerosol_ancil_fields, plant_func_ancil_fields, sea_ancil_fields, &
+            ozone_ancil_fields, sea_ice_ancil_fields)
+    if (ancil_option == ancil_option_updating) then
+      if (.not. present(modeldb)) then
+        call log_event("init_gungho_files requires modeldb in updating ancillary mode", &
+                       log_level_error)
+      end if
+
+      if ( aerosol_file_owned() .and.                           &
+           ( ( glomap_mode == glomap_mode_dust_and_clim ) .or.  &
+             ( glomap_mode == glomap_mode_climatology   ) ) ) then
+        aerosol_ancil_fields => get_required_collection(modeldb, "aerosol_ancil_fields")
+      end if
+      if ( pft_ancil_file_owned ) then
+        plant_func_ancil_fields => get_required_collection(modeldb, "plant_func_ancil_fields")
+      end if
+      if ( l_sea_alb_var_chl ) then
+        sea_ancil_fields => get_required_collection(modeldb, "sea_ancil_fields")
+      end if
+      if ( ozone_file_owned() ) then
+        ozone_ancil_fields => get_required_collection(modeldb, "ozone_ancil_fields")
+      end if
+      if ( sea_ice_ancil_file_owned() ) then
+        sea_ice_ancil_fields => get_required_collection(modeldb, "sea_ice_ancil_fields")
+      end if
+    end if
+#endif
 
     ! Get time configuration in integer form
     read(timestep_start,*,iostat=rc)  ts_start
@@ -391,9 +440,20 @@ module gungho_setup_io_mod
             write(ancil_fname,'(A)') trim(ancil_directory)//'/'// &
                                     trim(sea_ice_ancil_path)
           end if
-          call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+          if ( sea_ice_ancil_file_owned() ) then
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                         xios_id="sea_ice_ancil", &
+                                                         io_mode=FILE_MODE_READ, &
+                                                         operation=OPERATION_TIMESERIES, &
+                                                         cyclic=.true., &
+                                                         update_freq=1*lx_day, &
+                                                         file_variable_names=sea_ice_ancil_names, &
+                                                         fields_in_file=sea_ice_ancil_fields ) )
+          else
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
                                                          xios_id="sea_ice_ancil", &
                                                          io_mode=FILE_MODE_READ ) )
+          end if
         end if
 
       end if
@@ -405,17 +465,38 @@ module gungho_setup_io_mod
         ! Set plant functional type ancil filename from namelist
         write(ancil_fname,'(A)') trim(ancil_directory)//'/'// &
                                  trim(plant_func_ancil_path)
-        call files_list%insert_item( lfric_xios_file_type( ancil_fname,        &
-                                                         xios_id="plant_func_ancil", &
-                                                         io_mode=FILE_MODE_READ ) )
+        if (ancil_option == ancil_option_updating .and. pft_ancil_file_owned) then
+          call files_list%insert_item( lfric_xios_file_type( ancil_fname,        &
+                                                           xios_id="plant_func_ancil", &
+                                                           io_mode=FILE_MODE_READ, &
+                                                           operation=OPERATION_TIMESERIES, &
+                                                           cyclic=.true., &
+                                                           update_freq=1*lx_day, &
+                                                           fields_in_file=plant_func_ancil_fields ) )
+        else
+          call files_list%insert_item( lfric_xios_file_type( ancil_fname,        &
+                                                           xios_id="plant_func_ancil", &
+                                                           io_mode=FILE_MODE_READ ) )
+        end if
 
         ! Set sea chlorophyll ancil filename from namelist
         if ( l_sea_alb_var_chl ) then
           write(ancil_fname,'(A)') trim(ancil_directory)//'/'// &
                                    trim(sea_ancil_path)
-          call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
-                                                           xios_id="sea_ancil", &
-                                                           io_mode=FILE_MODE_READ ) )
+          if (ancil_option == ancil_option_updating) then
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                             xios_id="sea_ancil", &
+                                                             io_mode=FILE_MODE_READ, &
+                                                             operation=OPERATION_TIMESERIES, &
+                                                             cyclic=.true., &
+                                                             update_freq=1*lx_day, &
+                                                             file_variable_names=chloro_sea_ancil_names, &
+                                                             fields_in_file=sea_ancil_fields ) )
+          else
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                             xios_id="sea_ancil", &
+                                                             io_mode=FILE_MODE_READ ) )
+          end if
         end if
 
         if ( l_albedo_obs ) then
@@ -442,9 +523,20 @@ module gungho_setup_io_mod
         end if
         write(ancil_fname,'(A)') trim(ozone_ancil_directory)//'/'// &
                                  trim(ozone_ancil_path)
-        call files_list%insert_item( lfric_xios_file_type( ancil_fname,        &
+        if ( ozone_file_owned() ) then
+          call files_list%insert_item( lfric_xios_file_type( ancil_fname,        &
+                                                         xios_id="ozone_ancil", &
+                                                         io_mode=FILE_MODE_READ, &
+                                                         operation=OPERATION_TIMESERIES, &
+                                                         cyclic=.true., &
+                                                         update_freq=1*lx_month, &
+                                                         file_variable_names=ozone_ancil_names, &
+                                                         fields_in_file=ozone_ancil_fields ) )
+        else
+          call files_list%insert_item( lfric_xios_file_type( ancil_fname,        &
                                                          xios_id="ozone_ancil", &
                                                          io_mode=FILE_MODE_READ ) )
+        end if
 
         if (murk_prognostic) then
           ! Set aerosol emission ancil filenames from namelist
@@ -470,9 +562,20 @@ module gungho_setup_io_mod
           end if
           write(ancil_fname,'(A)') trim(aerosol_ancil_directory)//'/'// &
                                    trim(aerosols_ancil_path)
-          call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
-                                                         xios_id="aerosols_ancil", &
-                                                         io_mode=FILE_MODE_READ ) )
+          if ( aerosol_file_owned() ) then
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                           xios_id="aerosols_ancil", &
+                                                           io_mode=FILE_MODE_READ, &
+                                                           operation=OPERATION_TIMESERIES, &
+                                                           cyclic=.true., &
+                                                           update_freq=1*lx_day, &
+                                                           file_variable_names=aerosol_ancil_names, &
+                                                           fields_in_file=aerosol_ancil_fields ) )
+          else
+            call files_list%insert_item( lfric_xios_file_type( ancil_fname,      &
+                                                           xios_id="aerosols_ancil", &
+                                                           io_mode=FILE_MODE_READ ) )
+          end if
         end if
 
       end if ! updating or a new run
@@ -929,5 +1032,28 @@ module gungho_setup_io_mod
     end if
 
   end subroutine init_gungho_files
+
+#ifdef UM_PHYSICS
+  !> @brief Gets a collection of fields read by a file object from the modeldb
+  !>
+  !> @param[in,out] modeldb The modeldb holding the collection
+  !> @param[in]     name    Name of the collection
+  !> @return        A pointer to the collection
+  function get_required_collection( modeldb, name ) result( collection )
+
+    implicit none
+
+    type(modeldb_type), intent(inout)    :: modeldb
+    character(*),       intent(in)       :: name
+    type(field_collection_type), pointer :: collection
+
+    if ( .not. modeldb%fields%field_collection_exists(name) ) then
+      call log_event("Collection '"//trim(name)//"' needed by an ancillary "// &
+                     "file does not exist", log_level_error)
+    end if
+    collection => modeldb%fields%get_field_collection(name)
+
+  end function get_required_collection
+#endif
 
 end module gungho_setup_io_mod

@@ -832,6 +832,20 @@
         "plot_str": "plot_map.py -ral $NODAL_DATA_DIR/lfric_diagnostics.nc  $PLOT_DIR",
     }) %}
 
+{% elif task_ns.conf_name == "ral4_ancil_updating-seuk_MG" %}
+
+    {# Reads aerosol climatology, ozone, sea chlorophyll and sea ice (and #}
+    {# plant functional types, while the switch is on) through the #}
+    {# file-owned time-varying API. No KGO yet: compare against ral4-seuk_MG #}
+    {% do task_dict.update({
+        "opt_confs": ["l70_40km","ral4","ral_opts","hh_solve","native_wind_transport","ancil_updating"],
+        "resolution": "seuk_MG",
+        "DT": 60,
+        "tsteps": 120,
+        "mpi_parts": 16,
+        "plot_str": "plot_map.py -ral $NODAL_DATA_DIR/lfric_diagnostics.nc  $PLOT_DIR",
+    }) %}
+
 {% elif task_ns.conf_name == "ral4-2T-seuk_MG" %}
 
     {% do task_dict.update({

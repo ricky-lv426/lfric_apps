@@ -6,7 +6,7 @@
 !>@brief Prepares the glomap aerosol fields
 module init_aerosol_fields_alg_mod
 
-  use constants_mod,                   only: r_def, i_def
+  use constants_mod,                   only: r_def, i_def, l_def
 
   ! Derived Types
   use field_mod,                       only: field_type
@@ -29,6 +29,10 @@ contains
   subroutine init_aerosol_fields_alg(aerosol_fields)
 
     use section_choice_config_mod, only: aerosol, aerosol_um
+    use initialization_config_mod, only: ancil_option, ancil_option_updating, &
+                                         coarse_aerosol_ancil,                &
+                                         coarse_ozone_ancil
+    use formulation_config_mod,    only: use_multires_coupling
     use aerosol_config_mod, only: glomap_mode,               &
                                   glomap_mode_climatology,   &
                                   glomap_mode_dust_and_clim, &
@@ -40,6 +44,10 @@ contains
 
     ! Arguments
     type( field_collection_type ), intent( in ) :: aerosol_fields
+
+    ! Whether the climatology aerosol fields are filled by an ancillary file
+    ! object (mirrors aerosol_file_owned in init_ancils_mod)
+    logical(l_def) :: climatology_file_owned
 
     ! Prognostic fields
     type( field_type ), pointer :: n_nuc_sol => null()
@@ -330,24 +338,32 @@ contains
            glomap_mode == glomap_mode_dust_and_clim ) ) then
 
       ! GLOMAP-mode climatology scheme selected.
-      call invoke( setval_c(n_ait_sol,             0.0_r_def), &
-                   setval_c(ait_sol_su,            0.0_r_def), &
-                   setval_c(ait_sol_bc,            0.0_r_def), &
-                   setval_c(ait_sol_om,            0.0_r_def), &
-                   setval_c(n_acc_sol,             0.0_r_def), &
-                   setval_c(acc_sol_su,            0.0_r_def), &
-                   setval_c(acc_sol_bc,            0.0_r_def), &
-                   setval_c(acc_sol_om,            0.0_r_def), &
-                   setval_c(acc_sol_ss,            0.0_r_def), &
-                   setval_c(n_cor_sol,             0.0_r_def), &
-                   setval_c(cor_sol_su,            0.0_r_def), &
-                   setval_c(cor_sol_bc,            0.0_r_def), &
-                   setval_c(cor_sol_om,            0.0_r_def), &
-                   setval_c(cor_sol_ss,            0.0_r_def), &
-                   setval_c(n_ait_ins,             0.0_r_def), &
-                   setval_c(ait_ins_bc,            0.0_r_def), &
-                   setval_c(ait_ins_om,            0.0_r_def), &
-                   setval_c(n_acc_ins,             0.0_r_def), &
+      ! The 17 climatology fields are set by the ancillary file object when it
+      ! owns them (updating mode, aerosol not on a coarse mesh).
+      climatology_file_owned = ancil_option == ancil_option_updating .and. &
+                               .not. ( use_multires_coupling .and.         &
+                                       ( coarse_aerosol_ancil .or.         &
+                                         coarse_ozone_ancil ) )
+      if (.not. climatology_file_owned) then
+        call invoke( setval_c(n_ait_sol,             0.0_r_def), &
+                     setval_c(ait_sol_su,            0.0_r_def), &
+                     setval_c(ait_sol_bc,            0.0_r_def), &
+                     setval_c(ait_sol_om,            0.0_r_def), &
+                     setval_c(n_acc_sol,             0.0_r_def), &
+                     setval_c(acc_sol_su,            0.0_r_def), &
+                     setval_c(acc_sol_bc,            0.0_r_def), &
+                     setval_c(acc_sol_om,            0.0_r_def), &
+                     setval_c(acc_sol_ss,            0.0_r_def), &
+                     setval_c(n_cor_sol,             0.0_r_def), &
+                     setval_c(cor_sol_su,            0.0_r_def), &
+                     setval_c(cor_sol_bc,            0.0_r_def), &
+                     setval_c(cor_sol_om,            0.0_r_def), &
+                     setval_c(cor_sol_ss,            0.0_r_def), &
+                     setval_c(n_ait_ins,             0.0_r_def), &
+                     setval_c(ait_ins_bc,            0.0_r_def), &
+                     setval_c(ait_ins_om,            0.0_r_def) )
+      end if
+      call invoke( setval_c(n_acc_ins,             0.0_r_def), &
                    setval_c(acc_ins_du,            0.0_r_def), &
                    setval_c(n_cor_ins,             0.0_r_def), &
                    setval_c(cor_ins_du,            0.0_r_def), &

@@ -96,6 +96,8 @@ Idealised initialisations and forcings
 - hd209458b - Hot Jupiter setup of the planet HD209458b
 
 Configuration specific settings
+- ancil_updating - read time-varying ancillaries through the file-owned API
+                   (ancil_option='updating'), with iodef_ral_ancil_updating.xml
 - june_case - change start date for 2nd June case study
 - lowres_stp - override maximum wavenumber for low resolution (e.g. C12) runs
                with stochastic physics

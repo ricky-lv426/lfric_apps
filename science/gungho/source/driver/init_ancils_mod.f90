@@ -25,8 +25,12 @@ module init_ancils_mod
   use function_space_collection_mod,  only : function_space_collection
   use fs_continuity_mod,              only : W3, WTheta
   use pure_abstract_field_mod,        only : pure_abstract_field_type
+  use driver_modeldb_mod,             only : modeldb_type
   use lfric_xios_time_axis_mod,       only : time_axis_type
-  use jules_control_init_mod,         only : n_land_tile, n_sea_ice_tile
+  use jules_control_init_mod,         only : n_land_tile, n_sea_ice_tile, &
+                                             pft_ancil_file_owned,        &
+                                             sea_ice_ancil_file_owned,    &
+                                             sea_ice_thickness_file_owned
   use jules_physics_init_mod,         only : snow_lev_tile
   use jules_surface_types_mod,        only : npft
   use dust_parameters_mod,            only : ndiv
@@ -42,7 +46,10 @@ module init_ancils_mod
                                              snow_source_surf,          &
                                              sea_ice_source,            &
                                              sea_ice_source_start_dump, &
-                                             sea_ice_source_surf
+                                             sea_ice_source_surf,       &
+                                             coarse_aerosol_ancil,      &
+                                             coarse_ozone_ancil
+  use formulation_config_mod,         only : use_multires_coupling
   use aerosol_config_mod,             only : glomap_mode,               &
                                              glomap_mode_climatology,   &
                                              glomap_mode_dust_and_clim, &
@@ -93,7 +100,49 @@ module init_ancils_mod
 
   public   :: create_fd_ancils,           &
               create_fd_ancils_idealised, &
-              setup_ancil_field
+              create_file_owned_ancils,   &
+              setup_ancil_field,          &
+              aerosol_ancil_names,        &
+              aerosol_file_owned,         &
+              chloro_sea_ancil_names,     &
+              ozone_ancil_names,          &
+              ozone_file_owned,           &
+              sea_ice_ancil_names,        &
+              pft_ancil_names
+
+  ! Pairs of (model field name, variable name in the aerosol ancillary file)
+  character(len=str_def), parameter :: aerosol_ancil_names(2,17) = reshape( &
+    [ character(len=str_def) ::                                            &
+      "acc_sol_bc", "AcSoBC_109", "acc_sol_om", "AcSoOC_110",             &
+      "acc_sol_su", "AcSoSU_108", "acc_sol_ss", "AcSoSS_111",             &
+      "n_acc_sol",  "AcSo___107", "ait_sol_bc", "AiSoBC_105",             &
+      "ait_sol_om", "AiSoOC_106", "ait_sol_su", "AiSoSU_104",             &
+      "n_ait_sol",  "AiSo___103", "ait_ins_bc", "AiInBC_120",             &
+      "ait_ins_om", "AiInOC_121", "n_ait_ins",  "AiIn___119",             &
+      "cor_sol_bc", "CoSoBC_115", "cor_sol_om", "CoSoOC_116",             &
+      "cor_sol_su", "CoSoSU_114", "cor_sol_ss", "CoSoSS_117",             &
+      "n_cor_sol",  "CoSo___113" ], [2,17] )
+
+  ! Pair of (model field name, variable name in the sea chlorophyll file)
+  character(len=str_def), parameter :: chloro_sea_ancil_names(2,1) = reshape( &
+    [ character(len=str_def) :: "chloro_sea",                                 &
+      "mass_concentration_of_chlorophyll_a_in_sea_water" ], [2,1] )
+
+  ! Pair of (model field name, variable name in the ozone file)
+  character(len=str_def), parameter :: ozone_ancil_names(2,1) = reshape( &
+    [ character(len=str_def) :: "ozone", "mass_fraction_of_ozone_in_air" ], &
+    [2,1] )
+
+  ! Pairs of (model field name, variable name in the sea ice file)
+  character(len=str_def), parameter :: sea_ice_ancil_names(2,2) = reshape( &
+    [ character(len=str_def) ::                                            &
+      "sea_ice_fraction",  "sea_ice_area_fraction",                        &
+      "sea_ice_thickness", "sea_ice_thickness" ], [2,2] )
+
+  ! Names of the plant functional type fields. Their file variables have the
+  ! same names as the fields, so no mapping is needed.
+  character(len=str_def), parameter :: pft_ancil_names(2) = &
+    [ character(len=str_def) :: "canopy_height", "leaf_area_index" ]
 
 contains
 
@@ -172,6 +221,8 @@ contains
     type(time_axis_type), save :: easy_extinction_sw_time_axis
     type(time_axis_type), save :: easy_extinction_lw_time_axis
 
+    integer(i_def) :: i_aer
+    integer(i_def) :: i_pft
     ! Time axis options
     logical(l_def),   parameter :: interp_flag=.true.
 
@@ -194,16 +245,25 @@ contains
                               ndata=n_land_tile)
     end if
 
-    call pft_time_axis%initialise("plant_func_time",          &
-                                  file_id="plant_func_ancil", &
-                                  interp_flag=interp_flag, pop_freq="daily")
-    call setup_ancil_field("canopy_height", depository, ancil_fields,         &
-                              mesh, twod_mesh, twod=.true., ndata=npft, &
-                              time_axis=pft_time_axis)
-    call setup_ancil_field("leaf_area_index", depository, ancil_fields,       &
-                              mesh, twod_mesh, twod=.true., ndata=npft, &
-                              time_axis=pft_time_axis)
-    call ancil_times_list%insert_item(pft_time_axis)
+    if ( ancil_option == ancil_option_updating .and. pft_ancil_file_owned ) then
+      ! Read and updated by the file object
+      do i_pft = 1, size(pft_ancil_names)
+        call setup_ancil_field( pft_ancil_names(i_pft), depository, ancil_fields, &
+                                mesh, twod_mesh, twod=.true., ndata=npft,         &
+                                read_by_file=.true. )
+      end do
+    else
+      call pft_time_axis%initialise("plant_func_time",          &
+                                    file_id="plant_func_ancil", &
+                                    interp_flag=interp_flag, pop_freq="daily")
+      call setup_ancil_field("canopy_height", depository, ancil_fields,         &
+                                mesh, twod_mesh, twod=.true., ndata=npft, &
+                                time_axis=pft_time_axis)
+      call setup_ancil_field("leaf_area_index", depository, ancil_fields,       &
+                                mesh, twod_mesh, twod=.true., ndata=npft, &
+                                time_axis=pft_time_axis)
+      call ancil_times_list%insert_item(pft_time_axis)
+    end if
 
     if ( l_urban2t .and. (init_option == init_option_fd_start_dump .and. &
          .not. checkpoint_read) ) then
@@ -216,7 +276,11 @@ contains
     endif
 
     !=====  SEA ANCILS  =====
-    if ( l_sea_alb_var_chl ) then
+    if ( l_sea_alb_var_chl .and. ancil_option == ancil_option_updating ) then
+      ! Read and updated by the file object
+      call setup_ancil_field("chloro_sea", depository, ancil_fields, mesh, &
+                              twod_mesh, twod=.true., read_by_file=.true.)
+    else if ( l_sea_alb_var_chl ) then
       call sea_time_axis%initialise("sea_time", file_id="sea_ancil", &
                                     interp_flag=interp_flag, pop_freq="daily")
       call setup_ancil_field("chloro_sea", depository, ancil_fields, mesh, &
@@ -242,7 +306,18 @@ contains
     end if
 
     !=====  SEA ICE ANCILS  =====
-    if (sea_ice_source /= sea_ice_source_start_dump) then
+    if ( sea_ice_ancil_file_owned() ) then
+      ! Read and updated by the file object. The tile fractions derived from
+      ! the ice fraction are updated by update_ancils_alg.
+      if ( sea_ice_thickness_file_owned() ) then
+        call setup_ancil_field("sea_ice_thickness", depository, ancil_fields, &
+                  mesh, twod_mesh, twod=.true., ndata=n_sea_ice_tile,         &
+                  read_by_file=.true.)
+      end if
+      call setup_ancil_field("sea_ice_fraction", depository, ancil_fields, &
+                mesh, twod_mesh, twod=.true., ndata=n_sea_ice_tile,        &
+                read_by_file=.true.)
+    else if (sea_ice_source /= sea_ice_source_start_dump) then
       if (sea_ice_source == sea_ice_source_surf) then
         call sea_ice_time_axis%initialise("sea_ice_time", file_id="sea_ice_ancil", &
                                         interp_flag=.false., pop_freq="daily", &
@@ -386,12 +461,18 @@ contains
     end if
 
     !=====  OZONE ANCIL  =====
-    call ozone_time_axis%initialise("ozone_time", file_id="ozone_ancil", &
-                                    interp_flag=interp_flag, pop_freq="monthly")
-    call setup_ancil_field("ozone", depository, ancil_fields, mesh, &
-                           twod_mesh, time_axis=ozone_time_axis,    &
-                           alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-    call ancil_times_list%insert_item(ozone_time_axis)
+    if ( ozone_file_owned() ) then
+      ! Read and updated by the file object
+      call setup_ancil_field("ozone", depository, ancil_fields, mesh, &
+                             twod_mesh, read_by_file=.true.)
+    else
+      call ozone_time_axis%initialise("ozone_time", file_id="ozone_ancil", &
+                                      interp_flag=interp_flag, pop_freq="monthly")
+      call setup_ancil_field("ozone", depository, ancil_fields, mesh, &
+                             twod_mesh, time_axis=ozone_time_axis,    &
+                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
+      call ancil_times_list%insert_item(ozone_time_axis)
+    end if
 
     !=====  AEROSOL ANCILS =====
     if (murk_prognostic) then
@@ -404,67 +485,31 @@ contains
 
     if ( ( glomap_mode == glomap_mode_climatology ) .or. &
          ( glomap_mode == glomap_mode_dust_and_clim ) ) then
-      call aerosol_time_axis%initialise( "aerosols_time",          &
-                                         file_id="aerosols_ancil", &
-                                         interp_flag=interp_flag,  &
-                                         pop_freq="daily" )
-      call setup_ancil_field("acc_sol_bc", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("acc_sol_om", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("acc_sol_su", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("acc_sol_ss", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("n_acc_sol",  depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("ait_sol_bc", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("ait_sol_om", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("ait_sol_su", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("n_ait_sol",  depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("ait_ins_bc", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("ait_ins_om", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("n_ait_ins",  depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("cor_sol_bc", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("cor_sol_om", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("cor_sol_su", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("cor_sol_ss", depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
-      call setup_ancil_field("n_cor_sol",  depository, ancil_fields, mesh,  &
-                             twod_mesh, time_axis=aerosol_time_axis,        &
-                             alt_mesh=aerosol_mesh, alt_twod_mesh=aerosol_twod_mesh)
+      if ( aerosol_file_owned() ) then
+        ! Fields are owned by the aerosol file object, which handles the updates
+        do i_aer = 1, size(aerosol_ancil_names, 2)
+          call setup_ancil_field(trim(aerosol_ancil_names(1,i_aer)),       &
+                                 depository, ancil_fields, mesh, twod_mesh, &
+                                 read_by_file=.true.)
+        end do
+      else
+        call aerosol_time_axis%initialise( "aerosols_time",          &
+                                           file_id="aerosols_ancil", &
+                                           interp_flag=interp_flag,  &
+                                           pop_freq="daily" )
+        do i_aer = 1, size(aerosol_ancil_names, 2)
+          call setup_ancil_field(trim(aerosol_ancil_names(1,i_aer)),       &
+                                 depository, ancil_fields, mesh, twod_mesh, &
+                                 time_axis=aerosol_time_axis,              &
+                                 alt_mesh=aerosol_mesh,                    &
+                                 alt_twod_mesh=aerosol_twod_mesh)
+        end do
+        call ancil_times_list%insert_item(aerosol_time_axis)
+      end if
 
       ! The following fields will need including when dust is available in the
       ! ancillary file:
       !   acc_sol_du, cor_sol_du, n_acc_ins, acc_ins_du, n_cor_ins, cor_ins_du
-
-      call ancil_times_list%insert_item(aerosol_time_axis)
     end if
 
     !=====  EMISSION ANCILS (dust only) =====
@@ -986,6 +1031,173 @@ contains
 
   end subroutine create_fd_ancils_idealised
 
+  !> @details Creates the fields owned by time-varying ancillary file objects
+  !>          and binds them to the collections given to those files. Must be
+  !>          called before the I/O context is closed.
+  !> @param[in,out] modeldb   The model database, holding the depository and the
+  !>                          (already created, empty) collections bound to the
+  !>                          file objects
+  !> @param[in] mesh          The current 3d mesh
+  !> @param[in] twod_mesh     The current 2d mesh
+  subroutine create_file_owned_ancils( modeldb, mesh, twod_mesh )
+
+    implicit none
+
+    class( modeldb_type ),      intent(inout) :: modeldb
+    type( mesh_type ), pointer, intent(in)    :: mesh
+    type( mesh_type ), pointer, intent(in)    :: twod_mesh
+
+    type( field_collection_type ), pointer :: depository
+    type( field_collection_type ), pointer :: collection
+    integer(i_def) :: i
+
+    if (ancil_option /= ancil_option_updating) return
+
+    depository => modeldb%fields%get_field_collection("depository")
+
+    if ( aerosol_file_owned() .and. &
+         ( ( glomap_mode == glomap_mode_climatology ) .or. &
+           ( glomap_mode == glomap_mode_dust_and_clim ) ) ) then
+      collection => modeldb%fields%get_field_collection("aerosol_ancil_fields")
+      do i = 1, size(aerosol_ancil_names, 2)
+        call create_file_owned_field( aerosol_ancil_names(1,i), depository, &
+                                      collection, mesh, twod_mesh )
+      end do
+    end if
+
+    if ( sea_ice_ancil_file_owned() ) then
+      collection => modeldb%fields%get_field_collection("sea_ice_ancil_fields")
+      call create_file_owned_field( "sea_ice_fraction", depository,    &
+                                    collection, mesh, twod_mesh,       &
+                                    twod=.true., ndata=n_sea_ice_tile )
+      if ( sea_ice_thickness_file_owned() ) then
+        call create_file_owned_field( "sea_ice_thickness", depository, &
+                                      collection, mesh, twod_mesh,     &
+                                      twod=.true., ndata=n_sea_ice_tile )
+      end if
+    end if
+
+    if ( ozone_file_owned() ) then
+      collection => modeldb%fields%get_field_collection("ozone_ancil_fields")
+      call create_file_owned_field( ozone_ancil_names(1,1), depository, &
+                                    collection, mesh, twod_mesh )
+    end if
+
+    if ( pft_ancil_file_owned ) then
+      collection => modeldb%fields%get_field_collection("plant_func_ancil_fields")
+      do i = 1, size(pft_ancil_names)
+        call create_file_owned_field( pft_ancil_names(i), depository, &
+                                      collection, mesh, twod_mesh,    &
+                                      twod=.true., ndata=npft )
+      end do
+    end if
+
+    if ( l_sea_alb_var_chl ) then
+      collection => modeldb%fields%get_field_collection("sea_ancil_fields")
+      call create_file_owned_field( chloro_sea_ancil_names(1,1), depository, &
+                                    collection, mesh, twod_mesh, twod=.true. )
+    end if
+
+    nullify(depository, collection)
+
+  end subroutine create_file_owned_ancils
+
+  !> @details Whether the coarse aerosol mesh is in use. The aerosol and ozone
+  !>          ancillaries are then regridded, which the file object cannot do.
+  function coarse_aerosol_mesh_in_use() result( coarse )
+
+    implicit none
+
+    logical(l_def) :: coarse
+
+    coarse = use_multires_coupling .and. &
+             ( coarse_aerosol_ancil .or. coarse_ozone_ancil )
+
+  end function coarse_aerosol_mesh_in_use
+
+  !> @details Whether the climatology aerosol ancillary is read by a file
+  !>          object. This is the case in updating mode unless the aerosol is on
+  !>          a coarse mesh, which the file object cannot regrid yet.
+  function aerosol_file_owned() result( file_owned )
+
+    implicit none
+
+    logical(l_def) :: file_owned
+
+    file_owned = ancil_option == ancil_option_updating .and. &
+                 .not. coarse_aerosol_mesh_in_use()
+
+  end function aerosol_file_owned
+
+  !> @details Whether the ozone ancillary is read by a file object. This is the
+  !>          case in updating mode unless the ozone is on a coarse mesh,
+  !>          which the file object cannot regrid yet.
+  function ozone_file_owned() result( file_owned )
+
+    implicit none
+
+    logical(l_def) :: file_owned
+
+    file_owned = ancil_option == ancil_option_updating .and. &
+                 .not. coarse_aerosol_mesh_in_use()
+
+  end function ozone_file_owned
+
+  !> @details Creates a field in the depository if needed and adds a reference
+  !>          to it in the collection owned by a file object. The field is a
+  !>          3D (Wtheta) field unless twod is set, in which case it is a 2D
+  !>          (W3) field. It has ndata values per point (default 1).
+  subroutine create_file_owned_field( name, depository, target_fields, mesh, &
+                                      twod_mesh, twod, ndata )
+
+    implicit none
+
+    character(*),                  intent(in)    :: name
+    type( field_collection_type ), intent(inout) :: depository
+    type( field_collection_type ), intent(inout) :: target_fields
+    type( mesh_type ), pointer,    intent(in)    :: mesh
+    type( mesh_type ), pointer,    intent(in)    :: twod_mesh
+    logical(l_def), optional,      intent(in)    :: twod
+    integer(i_def), optional,      intent(in)    :: ndata
+
+    type(field_type)                         :: new_field
+    type(function_space_type),       pointer :: vec_space => null()
+    procedure(write_interface),      pointer :: tmp_write_ptr => null()
+    procedure(read_interface),       pointer :: tmp_read_ptr => null()
+    type(field_type),                pointer :: fld_ptr => null()
+    class(pure_abstract_field_type), pointer :: abs_fld_ptr => null()
+    logical(l_def)                           :: twod_field
+    integer(i_def)                           :: ndat
+
+    twod_field = .false.
+    if (present(twod)) twod_field = twod
+    ndat = 1
+    if (present(ndata)) ndat = ndata
+
+    if ( .not. depository%field_exists(name) ) then
+      if (twod_field) then
+        vec_space => function_space_collection%get_fs( twod_mesh, 0, 0, W3, ndat )
+      else
+        vec_space => function_space_collection%get_fs( mesh, 0, 0, WTheta, ndat )
+      end if
+      call new_field%initialise( vec_space, name=trim(name) )
+      tmp_write_ptr => write_field_generic
+      call new_field%set_write_behaviour(tmp_write_ptr)
+      call depository%add_field(new_field)
+    end if
+
+    call depository%get_field(name, fld_ptr)
+    ! The file object copies this method into its read buffers when the I/O
+    ! context closes, so it must be set at creation
+    tmp_read_ptr => read_field_generic
+    call fld_ptr%set_read_behaviour(tmp_read_ptr)
+    abs_fld_ptr => fld_ptr
+    call target_fields%add_reference_to_field(abs_fld_ptr)
+
+    nullify(vec_space, tmp_write_ptr, tmp_read_ptr, fld_ptr, abs_fld_ptr)
+
+  end subroutine create_file_owned_field
+
   !> @details Adds fields to the ancil collection, sets up their read and write
   !>      behaviour and creates them in the depository if they do not yet exist
   !> @param[in] name The field name
@@ -995,12 +1207,14 @@ contains
   !> @param[in, optional] twod_mesh The current 2d mesh
   !> @param[in, optional] ndata Number of non-spatial dimensions for multi-data
   !>                            field
+  !> @param[in, optional] read_by_file Whether a file object reads this field,
+  !>                            in which case the generic read is not set
   !> @param[in, out, optional] time_axis Time axis associated with ancil field
   !> @param[in, optional] alt_mesh      Alternative 3d mesh for time axis fields
   !> @param[in, optional] alt_twod_mesh Alternative 2d mesh for time axis fields
   subroutine setup_ancil_field( name, depository, ancil_fields, mesh, &
                                 twod_mesh, twod, ndata, ndata_first,  &
-                                time_axis, alt_mesh, alt_twod_mesh  )
+                                read_by_file, time_axis, alt_mesh, alt_twod_mesh )
 
     implicit none
 
@@ -1012,6 +1226,7 @@ contains
     logical(l_def),       optional, intent(in)          :: twod
     integer(i_def),       optional, intent(in)          :: ndata
     logical(l_def),       optional, intent(in)          :: ndata_first
+    logical(l_def),       optional, intent(in)          :: read_by_file
     type(time_axis_type), optional, intent(inout)       :: time_axis
     type( mesh_type ), optional, pointer, intent(in)    :: alt_mesh
     type( mesh_type ), optional, pointer, intent(in)    :: alt_twod_mesh
@@ -1021,6 +1236,7 @@ contains
     integer(i_def)            :: ndat, time_ndat
     logical(l_def)            :: twod_field
     logical(l_def)            :: ndat_first
+    logical(l_def)            :: file_owned
     integer(i_def), parameter :: fs_order_h = 0
     integer(i_def), parameter :: fs_order_v = 0
 
@@ -1046,6 +1262,11 @@ contains
        ndat_first = ndata_first
     else
        ndat_first = .false.
+    end if
+    if (present(read_by_file)) then
+      file_owned = read_by_file
+    else
+      file_owned = .false.
     end if
 
     ! If field does not yet exist, then create it
@@ -1110,7 +1331,11 @@ contains
     ! Get a field pointer from the depository
     call depository%get_field(name, fld_ptr)
 
-    if (.not. present(time_axis)) then
+    if (file_owned) then
+      ! The file object, not the generic read, fills this field
+      nullify(tmp_read_ptr)
+      call fld_ptr%set_read_behaviour(tmp_read_ptr)
+    else if (.not. present(time_axis)) then
       !Set up field read behaviour for 2D and 3D fields
       tmp_read_ptr => read_field_generic
       ! Set field read behaviour for target field

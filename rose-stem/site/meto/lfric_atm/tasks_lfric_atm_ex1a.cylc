@@ -64,6 +64,12 @@
         "memory": [24, "GB"],
     }) %}
 
+{% elif task_ns.conf_name == "ral4_ancil_updating-seuk_MG" %}
+
+    {% do task_dict.update({
+        "memory": [24, "GB"],
+    }) %}
+
 {% elif task_ns.conf_name == "ral4-tr_bdf2-seuk_MG" %}
 
     {% do task_dict.update({

@@ -17,6 +17,11 @@ module init_radiation_fields_alg_mod
   use fs_continuity_mod,               only: Wtheta
   use mesh_mod,                        only: mesh_type
   use sci_geometric_constants_mod,     only: get_height_fv
+  use initialization_config_mod,       only: ancil_option,            &
+                                             ancil_option_updating,   &
+                                             coarse_aerosol_ancil,    &
+                                             coarse_ozone_ancil
+  use formulation_config_mod,          only: use_multires_coupling
 
   implicit none
 
@@ -139,14 +144,22 @@ contains
     call radiation_fields%get_field('aer_lw_scattering', aer_lw_scattering)
     call radiation_fields%get_field('aer_lw_asymmetry', aer_lw_asymmetry)
 
+    ! Set to zero if ancil/prognostic isn't read. When the ancillary file object
+    ! owns ozone (updating mode, not on a coarse mesh) it is left alone here:
+    ! the file object only refreshes it monthly.
+    if ( .not. ( ancil_option == ancil_option_updating .and.         &
+                 .not. ( use_multires_coupling .and.                 &
+                         ( coarse_aerosol_ancil .or.                 &
+                           coarse_ozone_ancil ) ) ) ) then
+      call invoke( setval_c(ozone, 0.0_r_def) )
+    end if
+
     ! Initialise the increments to 0 for use when the scheme isn't called
     call invoke( setval_c(dtheta_rad,        0.0_r_def),   &
                  setval_c(dmv_pc2_rad,       0.0_r_def),   &
                  setval_c(sw_heating_rate,   0.0_r_def),   &
                  setval_c(lw_heating_rate,   0.0_r_def),   &
                  setval_c(sw_up_tile,        0.0_r_def),   &
-                 ! Set to zero if ancil/prognostic isn't read
-                 setval_c(ozone,             0.0_r_def),   &
                  ! Need to set to zero for lowest level
                  setval_c(aer_mix_ratio,     0.0_r_def),   &
                  setval_c(aer_sw_absorption, 0.0_r_def),   &
